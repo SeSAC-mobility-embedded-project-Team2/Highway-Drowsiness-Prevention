@@ -14,5 +14,8 @@ Project_Root/
 │   └── 📂 Tests/            # 단위 테스트용 스크립트  
 └── 📄 README.md             # 프로젝트 개요  
 
+### Requirements
+👉 [요구사항 명세서 Google Docs](https://docs.google.com/spreadsheets/d/1GA2fsIz_X9MGZ1jV-OMV5jceq43T6OOZGFUdi2Nr6kI/edit?usp=sharing)
+
 ### SW Architecture
 <img src="./SW_ARCH.png" width="400px">  
