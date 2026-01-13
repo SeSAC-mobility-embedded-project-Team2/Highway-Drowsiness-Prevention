@@ -19,3 +19,6 @@ Project_Root/
 
 ### SW Architecture
 <img src="./SW_ARCH.png" width="400px">  
+
+### ICD (Interface Control Document)
+👉 [ICD Google Docs](https://docs.google.com/spreadsheets/d/1sVhbBkO5iRFneAzjhkxMpAqBnwXrGZptWKL747l2oKY/edit?usp=sharing)
