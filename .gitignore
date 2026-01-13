@@ -1,0 +1,53 @@
+# ==========================
+# 1. OS & General Junk
+# ==========================
+.DS_Store
+Thumbs.db
+*.swp
+*.log
+
+# ==========================
+# 2. Python (Vision Unit)
+# ==========================
+# 가상환경 폴더 (절대 올리면 안 됨)
+venv/
+env/
+.venv/
+
+# 바이트코드 및 캐시
+__pycache__/
+*.pyc
+
+# VS Code 설정 (개인 설정이므로 제외 추천)
+.vscode/
+
+# ==========================
+# 3. STM32CubeIDE (Firmware)
+# ==========================
+# 빌드 결과물 폴더 (컴파일 할 때마다 바뀜 - 필수 제외)
+**/Debug/
+**/Release/
+
+# 바이너리 및 오브젝트 파일
+*.bin
+*.elf
+*.hex
+*.o
+*.obj
+*.d
+*.su
+
+# IDE 자동 생성 설정 파일 (협업 시 충돌 원인)
+.settings/
+*.launch
+
+# 주의: .project, .cproject, .mxproject, .ioc 파일은 
+# 프로젝트를 여는데 필수이므로 지우면 안 됩니다! (여기 적지 마세요)
+
+# ==========================
+# 4. Altium / CAD (Docs)
+# ==========================
+# 회로도 백업 파일 등
+*.History
+*.SchDocPreview
+*.PcbDocPreview
