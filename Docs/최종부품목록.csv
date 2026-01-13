@@ -1,0 +1,37 @@
+﻿ID,카테고리,품명 (Item Name),상세 규격 (Model/Spec),수량,상태,구매처 (링크),단가,합계,비고 (Pin/Note)
+HW-01,제어보드,STM32 Nucleo-64,F103RB (Cortex-M3),4,구매필요,https://www.devicemart.co.kr/goods/view?no=1346033,20000,80000,메인 컨트롤러
+HW-02,제어보드,Raspberry Pi 5,,1,보유중,-,0,0,AI 연산용 (방열판 필수)
+HW-03,제어보드,STM32 Nucleo-64,"L073RZ ",5,보유중,,,,
+HW-04,통신,ESP-WROOM-32,,5,보유중,,,,
+HW-05,부자재,Easy Module Shield,ARD040110,5,보유중,,,,
+HW-06,부자재,모터쉴드," L298P H-bridge 2ch 모터드라이버 쉴드",5,보유중,https://www.devicemart.co.kr/goods/view?no=1357257,,,
+HW-07,부자재,MP3 모듈,DFPlayer Mini,5,보유중,,,,
+HW-08,부자재,스피커,,5,보유중,,,,
+HW-09,부자재,운전대 모형,,1,구매필요,https://www.coupang.com/vp/products/8304905684?itemId=23959146762&vendorItemId=90980637003&q=%EC%9A%B4%EC%A0%84%EB%8C%80&searchId=43e6bb741828487&sourceType=search&itemsCount=36&searchRank=1&rank=1&traceId=mkanx5bu,,,
+HW-10,부자재,글루건,,1,구매필요,https://www.coupang.com/vp/products/7337663183?itemId=18852131225&vendorItemId=85981403469&q=%EA%B8%80%EB%A3%A8%EA%B1%B4&searchId=947ac05c4321465&sourceType=search&itemsCount=36&searchRank=1&rank=1&traceId=mkap0isv,,,
+SE-00,센서,라즈베리카메라 모듈,Raspberry Pi Camera Module 3,1,보유중,-,0,0,
+SE-01,센서,NoIR 카메라 모듈,Pi Camera v2 호환 (야간용),1,구매필요,https://www.devicemart.co.kr/goods/view?no=1289483&srsltid=AfmBOoru1mYP6cMuNnjMymkX1s4LqiVlyY_ajHtyRdlS6z2QjXY2fN1c,15000,15000,IR LED 미포함
+SE-02,센서,초음파 센서,HC-SR04,5,보유중,-,0,0,전방 장애물 감지
+SE-03,센서,적외선 LED 광원모듈,"P5599-2, 850nm",1,구매필요,https://www.devicemart.co.kr/goods/view?no=13007877&srsltid=AfmBOooZlqrzVLmGH7IYtrh3S_dydcEFeeefnP_iDmcPc-mOCyUs3GUq,20680,20680,IR LED
+SE-04,센서,정전식 터치 센서,"  TTP223",4,구매필요,https://www.devicemart.co.kr/goods/view?no=1327431,1500,6000,
+SE-05,센서,엔코더 DC 모터,mb2832e-1268,1,보유중,-,0,0,스티어링 휠 제작
+SE-06,센서,광학식 엔코더 DC 모터,HC385MG-E96,1,보유중,-,0,0,스티어링 휠 제작
+SE-07,센서,로터리 엔코더," 로터리엔코더 20펄스 기어 샤프트 15mm",1,구매필요,https://www.devicemart.co.kr/goods/view?no=12501930,1320,1320,스티어링 휠 제작
+SE-08,센서,CO2 측정 센서,MQ-135,1,구매필요,devicemart.co.kr/goods/view?no=1327411,1650,1650,CO2 측정
+MT-01,모터,"서보모터 ",SG-90-HV,5,보유중,,,,
+MT-02,모터,엔코더모터,HC385MG-E96,3,보유중,,,,
+MT-03,모터,엔코더장착형 감속기어모터,RB-35GM (옵션 1:90),1,구매필요,https://www.devicemart.co.kr/goods/view?no=1326668,43890,43890,
+MT-04,모터,기어드DC모터 타이어세트,SZH-GNP194,1,구매필요,https://www.devicemart.co.kr/goods/view?no=1329802,23600,23600,
+DP-01,디스플레이,Raspberry Pi Touch Display,R-R-P2R-RPI-Display,1,구매필요,https://www.devicemart.co.kr/goods/view?no=1273487&srsltid=AfmBOor_BsCifTZd_h76duWIVOrbWS3PcuPvqgICya8zuuWI8FiH3BM_,85000,85000,클러스터 및 모니터링
+DP-02,디스플레이,아두이노 8X32 도트 매트릭스 모듈,MAX7219,1,구매필요,https://www.devicemart.co.kr/goods/view?no=1330850,3900,3900,
+ETC-01,부자재,DC 팬,,5,보유중,,,,
+CO-01,통신,CAN 트렌시버,SN65HVD230,6,구매필요,https://www.devicemart.co.kr/goods/view?no=15007385,9900,59400,CAN 통신 트렌시버
+ME-01,차체,모터 플랜지커플링,MFC 경질 샤프트coupler 내경 3파이,1,구매필요,https://www.devicemart.co.kr/goods/view?no=12535034,5500,5500,
+ME-02,차체,모터 플랜지커플링,MFC 경질 샤프트coupler 내경 6파이,1,구매필요,https://www.devicemart.co.kr/goods/view?no=12535037,7260,7260,
+ME-03,차체,황동 육각 허브,SZH-GNPHUB01 (3mm),1,구매필요,https://www.devicemart.co.kr/goods/view?no=1329632,3900,3900,
+ME-04,차체,황동 육각 허브,SZH-GNPHUB01 (6mm),1,구매필요,https://www.devicemart.co.kr/goods/view?no=15605524,3850,3850,
+ME-05,차체,기어드모터 고정 브라켓,"GMB-37B GM35, GM36, GM37 DC소형기어모터 시리즈용 ",1,구매필요,https://www.devicemart.co.kr/goods/view?no=12535059,5300,5300,
+PO-01,전원,외부 전원 12V,SAW24-120-2000,,보유중,,,,외부 전원
+PO-02,전원,릴레이모듈,SRD-05VDC-SL-C,,보유중,,,,
+PO-03,전원,외부전원 usb 멀티 허브, ipTIME UH508 (USB허브/8포트),1,구매필요,https://www.devicemart.co.kr/goods/view?no=15099268,28200,28200,
+합계,,,,,시작 전,,,,
