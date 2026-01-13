@@ -5,6 +5,7 @@ SeSAC 임베디드 모빌리티 교육 과정 프로젝트의 고속도로 주�
 Project_Root/  
 ├── 📂 Docs/                 # 요구사항 명세서, ICD 엑셀, 회로도, 데이터시트  
 ├── 📂 Firmware/             # STM32 (Nucleo) 소스코드  
+│   ├── 📂 Common/           # 공통 파일  
 │   ├── 📂 Chassis/          # 핸들/엔코더 제어  
 │   ├── 📂 Body/             # 초음파/터치 센서  
 │   ├── 📂 Gateway/          # 게이트웨이  
