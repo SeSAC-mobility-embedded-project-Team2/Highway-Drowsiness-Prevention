@@ -13,3 +13,6 @@ Project_Root/
 │   ├── 📂 Vision/           # 파이썬, OpenCV 코드  
 │   └── 📂 Tests/            # 단위 테스트용 스크립트  
 └── 📄 README.md             # 프로젝트 개요  
+
+### SW Architecture
+<img src="./SW_ARCH.png" width="400px">  
