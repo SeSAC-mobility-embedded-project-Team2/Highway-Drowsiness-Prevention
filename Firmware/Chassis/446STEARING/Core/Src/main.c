@@ -24,6 +24,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+#include <string.h>
+#include <can_message.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -68,7 +70,7 @@ uint32_t last_cycle_tick = 0;
 char uart_buf[120];
 
 CAN_TxHeaderTypeDef txHeader;
-uint8_t txData[8];
+Chassis_Data_t sChassis;
 uint32_t txMailbox;
 
 
@@ -178,9 +180,14 @@ int main(void)
 	          // [Step 3] CAN 송신
 	          CAN_Send_Chassis_Status();
 
-	          // [Step 4] 디버깅 출력 (비트열 확인 포함)
-	          int len = sprintf(uart_buf, "Ang:%6.1f|Std:%5.2f|Alive:%2d|Data:[0x%02X 0x%02X ... 0x%02X]\r\n",
-	                            current_angle, physical_std_dev, alive_cnt, txData[0], txData[1], txData[7]);
+	          // [Step 4] 디버깅 출력 (8바이트 전체 덤프)
+	          uint8_t *pDebug = (uint8_t*)&sChassis; // 구조체를 바이트 포인터로 참조
+
+	          int len = sprintf(uart_buf, "Ang:%6.1f|Std:%5.2f|Alive:%2d|Raw:[%02X %02X %02X %02X %02X %02X %02X %02X]\r\n",
+	                            current_angle, physical_std_dev, alive_cnt,
+	                            pDebug[0], pDebug[1], pDebug[2], pDebug[3],
+	                            pDebug[4], pDebug[5], pDebug[6], pDebug[7]); // 7번 인덱스까지 모두 출력
+
 	          HAL_UART_Transmit(&huart2, (uint8_t*)uart_buf, len, 100);
 	      }
 	      HAL_Delay(1);
@@ -483,31 +490,26 @@ float Calculate_Physical_StdDev(float *data, int size) {
  * @param raw_std: 16-bit value (Physical StdDev * 10)
  */
 void CAN_Send_Chassis_Status(void) {
-    txHeader.StdId = 0x201;
+    txHeader.StdId = CAN_ID_CHASSIS; // 0x201
     txHeader.IDE = CAN_ID_STD;
     txHeader.RTR = CAN_RTR_DATA;
     txHeader.DLC = 8;
 
-    // [High Byte] [Low Byte] 순서로 배치 (빅 엔디언)
-    // 1. Steering_StdDev (Byte 0-1)
-    txData[0] = (can_std_raw >> 8) & 0xFF; // High
-    txData[1] = can_std_raw & 0xFF;        // Low
+    // 1. 구조체 초기화 (이전 데이터 잔상 제거)
+    memset(&sChassis, 0, sizeof(Chassis_Data_t));
 
-    // 2. Steering_Angle_Cur (Byte 2-3)
-    txData[2] = (can_angle_raw >> 8) & 0xFF; // High
-    txData[3] = can_angle_raw & 0xFF;        // Low
+    // 2. 리틀 엔디언 방식으로 데이터 직접 대입
+    sChassis.steering_std_dev = (uint16_t)(physical_std_dev * 100.0f);
+    sChassis.steering_angle   = (int16_t)(current_angle * 10.0f);
+    sChassis.alive_cnt = alive_cnt;
+    sChassis.err_flag  = err_flag;
 
-    // 3. 비어있는 바이트 (Byte 4, 5, 6)
-    txData[4] = 0; txData[5] = 0; txData[6] = 0;
-
-    // 4. Chassis_Alive_Cnt (Bit 0-3) & Err_Flag (Bit 4-7) -> Byte 7
-    txData[7] = (alive_cnt & 0x0F) | ((err_flag & 0x0F) << 4);
-
-    if (HAL_CAN_AddTxMessage(&hcan1, &txHeader, txData, &txMailbox) != HAL_OK) {
-        // 전송 실패 에러 핸들링
+    // 3. 별도의 TxData 배열 없이 구조체 주소를 직접 전달 (캐스팅 활용)
+    if (HAL_CAN_GetTxMailboxesFreeLevel(&hcan1) > 0) {
+        // (uint8_t*)&sChassis 를 통해 구조체를 8바이트 배열처럼 취급합니다.
+        HAL_CAN_AddTxMessage(&hcan1, &txHeader, (uint8_t*)&sChassis, &txMailbox);
     }
 
-    // 롤링 카운터 증가
     alive_cnt = (alive_cnt + 1) % 16;
 }
 /* USER CODE END 4 */
