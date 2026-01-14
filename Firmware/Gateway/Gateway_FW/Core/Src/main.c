@@ -48,13 +48,22 @@ UART_HandleTypeDef huart1;
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
+// 시스템 상태 정의
+typedef enum {
+    STATE_NORMAL = 0,
+    STATE_WARNING, // 주의 (환기, 부저 1단계)
+    STATE_DANGER,  // 위험 (감속, 비상등, 부저 2단계)
+    STATE_FAULT    // 고장 (통신 두절 등)
+} SystemState_t;
 
+SystemState_t current_state = STATE_NORMAL;
 // 1. CAN 수신용 변수
 CAN_RxHeaderTypeDef RxHeader;
 uint8_t RxData[8];
 
 // 2. UART(Vision) 수신용 변수
-Vision_UART_Packet_t vision_rx_packet; // 구조체 그대로 받기
+uint8_t rx_byte; // 1바이트씩 검사할 임시 변수
+Vision_UART_Packet_t vision_rx_packet; // 최종 저장할 구조체
 
 // 3. 데이터 저장소 (디버깅용)
 Chassis_Data_t chassis_info;
@@ -69,7 +78,7 @@ static void MX_CAN_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_USART2_UART_Init(void);
 /* USER CODE BEGIN PFP */
-
+void Update_System_State();
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -136,8 +145,8 @@ int main(void)
 
     // === 2. UART(Vision) 수신 인터럽트 시작 ===
     // "Vision 패킷 크기만큼 데이터가 들어오면 알려줘!"
-    HAL_UART_Receive_IT(&huart1, (uint8_t*)&vision_rx_packet, sizeof(Vision_UART_Packet_t));
-
+//    HAL_UART_Receive_IT(&huart1, (uint8_t*)&vision_rx_packet, sizeof(Vision_UART_Packet_t));
+    HAL_UART_Receive_IT(&huart1, &rx_byte, 1);
     printf("Gateway System Started...\r\n"); // PC 터미널에서 보이면 성공!
     printf("Size of Struct: %d bytes\r\n", sizeof(Vision_UART_Packet_t));
   /* USER CODE END 2 */
@@ -149,22 +158,41 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	  // 0.5초마다 현재 상태 출력
-	      printf("=== System Status ===\r\n");
-	      printf("[Vision] PERCLOS: %d, Eye: %s\r\n",
-	              vision_rx_packet.perclos,
-	              vision_rx_packet.eye_state ? "CLOSED" : "OPEN");
 
-	      // 10으로 나눠서 실수로 복원
-	      printf("[Chassis] Angle: %.1f, StdDev: %.1f\r\n", chassis_info.steering_angle / 10.0f, chassis_info.steering_std_dev / 10.0f);
+	  printf("=== Raw Data Analysis ===\r\n");
+	  // 받은 데이터를 바이트 배열처럼 접근해서 출력
+	  uint8_t *ptr = (uint8_t*)&vision_rx_packet;
+	  printf("RX: ");
+	  for(int i=0; i<10; i++) {
+		  printf("%02X ", ptr[i]);// 02X: 16진수 두 글자로 출력 (예: FF 05 1A...)
+	  }
+	  printf("\r\n");
+	  printf("[Vision] PERCLOS: %d\r\n", vision_rx_packet.perclos);
+	  printf("-------------------------\r\n\r\n");
 
-	      printf("[Body] Dist: %d cm, Touch: %d\r\n",
-	              body_info.distance_head,
-	              body_info.touch_handle);
+	  // 상태 판단 실행
+	  Update_System_State();
+	  printf("[State] Current: ");
+	  switch (current_state)
+	  {
+	  case STATE_NORMAL:
+		  printf("🟢 NORMAL (Safe)\r\n");
+		  // (초록 LED 켜기 등의 코드 추가 가능)
+		  break;
+	  case STATE_WARNING:
+		  printf("🟡 WARNING (Drowsy!)\r\n");
+		  // [동작] 창문 개방 명령 전송 코드
+		  break;
+	  case STATE_DANGER:
+		  printf("🔴 DANGER (Emergency!)\r\n");
+		  // [동작] 비상등 점멸, 모터 감속 명령 전송 코드
+		  break;
+	  case STATE_FAULT:
+		  break;
+	  }
+	  printf("-------------------------\r\n\r\n");
+	  HAL_Delay(500); // 0.5초 대기
 
-	      printf("---------------------\r\n\r\n");
-
-	      HAL_Delay(500);
   }
   /* USER CODE END 3 */
 }
@@ -378,15 +406,83 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
 // 2. UART(Vision) 데이터가 도착하면 실행되는 함수
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
-  if (huart->Instance == USART1) // RPi 연결 포트
-  {
-    // 데이터 수신 완료! (vision_rx_packet에 값이 들어있음)
+  static uint8_t rx_index = 0;
+  static uint8_t rx_buffer[10];
 
-    // 다음 데이터를 받기 위해 인터럽트 다시 활성화 (필수!)
-    HAL_UART_Receive_IT(&huart1, (uint8_t*)&vision_rx_packet, sizeof(Vision_UART_Packet_t));
+  if (huart->Instance == USART1)
+  {
+
+    if (rx_index == 0)
+    {
+      if (rx_byte == 0xFF)
+      {
+        rx_buffer[rx_index++] = rx_byte;
+      }
+    }
+    else
+    {
+      rx_buffer[rx_index++] = rx_byte;
+
+
+      if (rx_index >= 10)
+      {
+    	memcpy(&vision_rx_packet, rx_buffer, 10);
+        rx_index = 0; // 초기화
+      }
+    }
+
+    // 다음 바이트 수신 대기
+//    HAL_UART_Receive_IT(&huart1, (uint8_t*)&vision_rx_packet, sizeof(Vision_UART_Packet_t));
+    HAL_UART_Receive_IT(&huart1, (uint8_t*)&rx_byte, 1);
   }
 }
 
+void Update_System_State()
+{
+    // === 1. 통신 상태 체크 (Heartbeat) ===
+    // (나중에 구현: 일정 시간 동안 데이터 안 오면 FAULT로 이동)
+
+    // === 2. 졸음/부주의 판단 로직 ===
+
+    // 조건 A: 눈을 감았는가? (PERCLOS 80% 이상이거나 눈 감음 상태)
+    uint8_t is_drowsy_vision = (vision_rx_packet.perclos > 80) || (vision_rx_packet.eye_state);
+
+    // 조건 B: 운전대가 불안한가? (표준편차 30 이상 - 가상의 임계값)
+    // (지금은 CAN 연결 안 됐으니 0이라고 가정하거나 더미값 사용)
+    uint8_t is_unstable_steering = (chassis_info.steering_std_dev > 30);
+
+    // === 3. 상태 천이 (State Transition) ===
+
+    // [Normal] -> [Danger] : 눈 감고 + 핸들 불안
+    if (current_state == STATE_NORMAL || current_state == STATE_WARNING)
+    {
+        if (is_drowsy_vision && is_unstable_steering)
+        {
+            current_state = STATE_DANGER;
+            printf(">>> DETECTED: DANGER! (Eye + Steering)\r\n");
+        }
+        // [Normal] -> [Warning] : 눈만 감음 OR 핸들만 불안
+        else if (is_drowsy_vision || is_unstable_steering)
+        {
+            current_state = STATE_WARNING;
+            printf(">>> DETECTED: WARNING! (Check Driver)\r\n");
+        }
+        else
+        {
+            current_state = STATE_NORMAL;
+        }
+    }
+
+    // [Danger] -> [Normal] : 다시 눈 뜨고 안정되면 복귀 (히스테리시스 필요하지만 일단 단순하게)
+    if (current_state == STATE_DANGER)
+    {
+        if (!is_drowsy_vision && !is_unstable_steering)
+        {
+            current_state = STATE_NORMAL;
+            printf(">>> RECOVERED: Normal State\r\n");
+        }
+    }
+}
 /* USER CODE END 4 */
 
 /**
