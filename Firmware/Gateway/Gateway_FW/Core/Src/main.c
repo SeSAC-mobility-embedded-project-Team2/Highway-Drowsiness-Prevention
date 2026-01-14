@@ -18,7 +18,9 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-
+#include "can_message.h" // 공통 헤더
+#include <stdio.h>       // printf용
+#include <string.h>
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 // test comment2
@@ -47,6 +49,17 @@ UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
 
+// 1. CAN 수신용 변수
+CAN_RxHeaderTypeDef RxHeader;
+uint8_t RxData[8];
+
+// 2. UART(Vision) 수신용 변수
+Vision_UART_Packet_t vision_rx_packet; // 구조체 그대로 받기
+
+// 3. 데이터 저장소 (디버깅용)
+Chassis_Data_t chassis_info;
+Body_Data_t body_info;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -62,6 +75,12 @@ static void MX_USART2_UART_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
+// printf 출력을 USART2(PC 연결)로 보내는 설정
+int _write(int file, char *ptr, int len)
+{
+  HAL_UART_Transmit(&huart2, (uint8_t *)ptr, len, 10);
+  return len;
+}
 /* USER CODE END 0 */
 
 /**
@@ -98,6 +117,29 @@ int main(void)
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
 
+  // === 1. CAN 필터 및 시작 설정  ===
+    CAN_FilterTypeDef sFilterConfig;
+    sFilterConfig.FilterBank = 0;
+    sFilterConfig.FilterMode = CAN_FILTERMODE_IDMASK;
+    sFilterConfig.FilterScale = CAN_FILTERSCALE_32BIT;
+    sFilterConfig.FilterIdHigh = 0x0000;
+    sFilterConfig.FilterIdLow = 0x0000;
+    sFilterConfig.FilterMaskIdHigh = 0x0000;
+    sFilterConfig.FilterMaskIdLow = 0x0000;
+    sFilterConfig.FilterFIFOAssignment = CAN_RX_FIFO0;
+    sFilterConfig.FilterActivation = ENABLE;
+    sFilterConfig.SlaveStartFilterBank = 14;
+
+    HAL_CAN_ConfigFilter(&hcan, &sFilterConfig);
+    HAL_CAN_Start(&hcan);
+    HAL_CAN_ActivateNotification(&hcan, CAN_IT_RX_FIFO0_MSG_PENDING);
+
+    // === 2. UART(Vision) 수신 인터럽트 시작 ===
+    // "Vision 패킷 크기만큼 데이터가 들어오면 알려줘!"
+    HAL_UART_Receive_IT(&huart1, (uint8_t*)&vision_rx_packet, sizeof(Vision_UART_Packet_t));
+
+    printf("Gateway System Started...\r\n"); // PC 터미널에서 보이면 성공!
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -107,6 +149,22 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+	  // 0.5초마다 현재 상태 출력
+	      printf("=== System Status ===\r\n");
+	      printf("[Vision] PERCLOS: %d, Eye: %s\r\n",
+	              vision_rx_packet.perclos,
+	              vision_rx_packet.eye_state ? "CLOSED" : "OPEN");
+
+	      // 10으로 나눠서 실수로 복원
+	      printf("[Chassis] Angle: %.1f, StdDev: %.1f\r\n", chassis_info.steering_angle / 10.0f, chassis_info.steering_std_dev / 10.0f);
+
+	      printf("[Body] Dist: %d cm, Touch: %d\r\n",
+	              body_info.distance_head,
+	              body_info.touch_handle);
+
+	      printf("---------------------\r\n\r\n");
+
+	      HAL_Delay(500);
   }
   /* USER CODE END 3 */
 }
@@ -296,6 +354,38 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+
+// 1. CAN 메시지가 도착하면 실행되는 함수
+void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
+{
+  // 메시지 가져오기
+  if (HAL_CAN_GetRxMessage(hcan, CAN_RX_FIFO0, &RxHeader, RxData) != HAL_OK)
+  {
+    return;
+  }
+
+  // ID 별로 분류해서 저장
+  if (RxHeader.StdId == 0x201) // Chassis ECU
+  {
+    memcpy(&chassis_info, RxData, sizeof(Chassis_Data_t));
+  }
+  else if (RxHeader.StdId == 0x301) // Body ECU
+  {
+    memcpy(&body_info, RxData, sizeof(Body_Data_t));
+  }
+}
+
+// 2. UART(Vision) 데이터가 도착하면 실행되는 함수
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+  if (huart->Instance == USART1) // RPi 연결 포트
+  {
+    // 데이터 수신 완료! (vision_rx_packet에 값이 들어있음)
+
+    // 다음 데이터를 받기 위해 인터럽트 다시 활성화 (필수!)
+    HAL_UART_Receive_IT(&huart1, (uint8_t*)&vision_rx_packet, sizeof(Vision_UART_Packet_t));
+  }
+}
 
 /* USER CODE END 4 */
 
