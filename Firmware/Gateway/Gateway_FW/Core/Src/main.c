@@ -139,7 +139,7 @@ int main(void)
     HAL_UART_Receive_IT(&huart1, (uint8_t*)&vision_rx_packet, sizeof(Vision_UART_Packet_t));
 
     printf("Gateway System Started...\r\n"); // PC 터미널에서 보이면 성공!
-
+    printf("Size of Struct: %d bytes\r\n", sizeof(Vision_UART_Packet_t));
   /* USER CODE END 2 */
 
   /* Infinite loop */
