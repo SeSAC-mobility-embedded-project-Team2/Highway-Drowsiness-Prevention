@@ -64,7 +64,7 @@ uint8_t RxData[8];
 
 // UART 버퍼 및 구조체 변수들
 uint8_t uart_rx_buffer[8];
-VisionData_t vision_rx_packet = {0};
+extern VisionData_t vision_data;
 extern ChassisData_t chassis_data;
 extern BodyData_t body_data;
 
@@ -434,7 +434,7 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
 void Update_System_State()
 {
     // 비전이나 섀시 쪽에서 에러 플래그가 하나라도 0이 아니면 고장 처리
-    if (vision_rx_packet.err_flag != 0 || chassis_data.err_flag != 0)
+    if (vision_data.err_flag != 0 || chassis_data.err_flag != 0)
     {
         printf("🔧 SENSOR ERROR DETECTED! (Fail-Safe Mode)\r\n");
         return;
