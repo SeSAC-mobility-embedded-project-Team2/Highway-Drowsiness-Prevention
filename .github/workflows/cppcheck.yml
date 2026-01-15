@@ -1,0 +1,33 @@
+name: Cppcheck HTML Report
+
+# 어떤 브랜치든 Push 하거나 PR을 만들면 실행됨
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      # 1. 저장소 코드 가져오기
+      - uses: actions/checkout@v4
+
+      # 2. Cppcheck 설치 (Ubuntu 환경)
+      - name: Install Cppcheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cppcheck
+
+      # 3. 분석 실행 및 HTML 변환
+      # --xml: 결과를 xml 포맷으로 출력
+      # 2> report.xml: 에러 로그를 파일로 저장
+      # cppcheck-htmlreport: xml을 html로 변환해주는 도구
+      - name: Generate Report
+        run: |
+          cppcheck --enable=all --inconclusive --xml --xml-version=2 . 2> report.xml
+          cppcheck-htmlreport --file=report.xml --report-dir=html_report --source-dir=. --title="Cppcheck Report"
+
+      # 4. 결과물(HTML 폴더)을 아티팩트로 업로드
+      - name: Upload HTML Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: cppcheck-html-report   # 다운로드될 파일 이름
+          path: html_report            # 업로드할 폴더 경로
