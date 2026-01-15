@@ -22,4 +22,7 @@ void DMS_Process_UART_Data(UART_HandleTypeDef *huart, uint8_t *buffer);
 // CAN 수신 처리 (Chassis/Body -> Gateway)
 void DMS_Process_CAN_Data(CAN_RxHeaderTypeDef *header, uint8_t *data);
 
+// Control ECU로 명령 전송 (UART)
+void DMS_Send_Control_Signal(UART_HandleTypeDef *huart, SystemState_t state, uint8_t mrm_active, uint8_t err_flag);
+
 #endif /* COMM_MANAGER_H */

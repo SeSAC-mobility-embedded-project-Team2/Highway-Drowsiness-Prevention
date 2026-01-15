@@ -60,7 +60,7 @@ CAN_RxHeaderTypeDef RxHeader;
 uint8_t RxData[8];
 
 // UART 버퍼 및 구조체 변수들
-uint8_t uart_rx_buffer[10];
+uint8_t uart_rx_buffer[8];
 VisionData_t vision_rx_packet = {0};
 ChassisData_t chassis_info = {0};
 BodyData_t body_info = {0};
@@ -146,6 +146,7 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
 	  Update_System_State();
+	  HAL_Delay(100);
 
   }
   /* USER CODE END 3 */
@@ -428,11 +429,31 @@ void Update_System_State()
     	}
     }
 
+    // 1. MRM 트리거 조건 판단 (예: Danger 상태이거나, 센서가 다 죽었거나)
+    uint8_t mrm_cmd = 0;
+    if (current_state == STATE_DANGER || current_state == STATE_FAULT)
+    {
+        mrm_cmd = 1; // 멈춰!
+    }
 
-    printf("Risk: %d | Eye: %d%% | Hands: %.1fs\r\n",
-    		risk_score,
-			vision_data.perclos,
-			body_data.hands_off_sec);
+    // 2. 에러 플래그 판단 (예: Vision 데이터가 너무 안 들어올 때)
+    uint8_t sys_err = 0;
+    if (vision_data.err_flag != 0) // Vision 센서 에러 시
+    {
+        sys_err = 1; // LogicFail (또는 ICD에 맞는 에러코드)
+    }
+
+    // 3. 제어 신호 전송 (ICD V0.1.2 규격)
+    DMS_Send_Control_Signal(&huart2, current_state, mrm_cmd, sys_err);
+    // 수정된 printf (무조작 시간 확인용)
+        printf("Risk: %d | Eye: %d%% | Hands: %.1fs | Head: %.1f | Steer: %.1f | NoOp: %.1fs\r\n",
+                risk_score,
+                vision_data.perclos,
+                body_data.hands_off_sec,
+                body_data.head_delta_cm,
+                chassis_data.steering_std_dev, // 혹은 steering_angle
+                no_op_sec // <--- 범인은 이 녀석일 겁니다!
+                );
 }
 
 /* USER CODE END 4 */

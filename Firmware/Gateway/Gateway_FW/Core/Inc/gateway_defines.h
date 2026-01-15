@@ -49,7 +49,7 @@ extern uint32_t no_op_timer;
 extern CAN_RxHeaderTypeDef RxHeader;
 extern uint8_t RxData[8];
 
-extern uint8_t uart_rx_buffer[10];
+extern uint8_t uart_rx_buffer[8];
 extern VisionData_t vision_rx_packet; // 구조체 이름 확인 필요
 extern ChassisData_t chassis_info;
 extern BodyData_t body_info;

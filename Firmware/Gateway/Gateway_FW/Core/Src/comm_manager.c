@@ -59,3 +59,51 @@ void DMS_Process_CAN_Data(CAN_RxHeaderTypeDef *header, uint8_t *data)
         body_data.hands_off_sec = raw_time * 0.1f;
     }
 }
+
+static uint8_t gateway_alive_cnt = 0;
+
+void DMS_Send_Control_Signal(UART_HandleTypeDef *huart, SystemState_t state, uint8_t mrm_active, uint8_t err_flag)
+{
+    // ICD V0.1.2에 따른 8바이트 패킷 생성
+    uint8_t tx_buffer[8] = {0,}; // 0으로 초기화 (Reserved 영역 자동 0 처리)
+
+    // --------------------------------------------------------
+    // [Byte 0] Alert_Level (Bit 0~7)
+    // --------------------------------------------------------
+    // 0:Normal, 1:Warning, 2:Danger, 3:Fault
+    tx_buffer[0] = (uint8_t)state;
+
+    // --------------------------------------------------------
+    // [Byte 1] MRM_Trigger (Bit 0)
+    // --------------------------------------------------------
+    // 1: Active, 0: Inactive
+    if (mrm_active)
+    {
+        tx_buffer[1] |= 0x01; // 첫 번째 비트 1 설정
+    }
+
+    // --------------------------------------------------------
+    // [Byte 2 ~ 6] Reserved
+    // --------------------------------------------------------
+    // 초기화 시 이미 0이므로 패스
+
+    // --------------------------------------------------------
+    // [Byte 7] Gateway_Alive_Cnt (Bit 0~3) + Gateway_Err_Flag (Bit 4~7)
+    // --------------------------------------------------------
+
+    // 1. Alive Count (하위 4비트)
+    tx_buffer[7] |= (gateway_alive_cnt & 0x0F);
+
+    // 2. Error Flag (상위 4비트)
+    tx_buffer[7] |= ((err_flag & 0x0F) << 4);
+
+    // 3. 카운터 증가 (0~15 롤링)
+    gateway_alive_cnt++;
+    if (gateway_alive_cnt > 15) gateway_alive_cnt = 0;
+
+    // --------------------------------------------------------
+    // [전송] UART Transmit (8 Bytes)
+    // --------------------------------------------------------
+    // 참고: UART 수신 측에서 Header 없이 Raw Data 8바이트를 읽는 방식이라면 이대로 전송
+    HAL_UART_Transmit(huart, tx_buffer, 8, 10);
+}
