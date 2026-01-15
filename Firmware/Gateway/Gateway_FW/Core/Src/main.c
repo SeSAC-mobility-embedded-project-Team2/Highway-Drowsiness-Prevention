@@ -57,9 +57,19 @@ typedef enum {
 } SystemState_t;
 
 SystemState_t current_state = STATE_NORMAL;
+
+int16_t prev_steering_angle = 0;
+uint32_t no_op_timer = 0; // 무조작 시간 카운터
+
 // 1. CAN 수신용 변수
 CAN_RxHeaderTypeDef RxHeader;
 uint8_t RxData[8];
+
+// 전역 변수 (CAN 수신값 저장용)
+uint8_t  can_perclos = 0;
+float    can_steer_std = 0.0f;
+float    can_hands_off_sec = 0.0f;
+float    can_head_delta = 0.0f;
 
 // 2. UART(Vision) 수신용 변수
 uint8_t rx_byte; // 1바이트씩 검사할 임시 변수
@@ -389,12 +399,6 @@ static void MX_GPIO_Init(void)
 // ICD V0.1.1 기반 CAN 통신 로직
 // ==========================================
 
-// 전역 변수 (CAN 수신값 저장용)
-uint8_t  can_perclos = 0;
-float    can_steer_std = 0.0f;
-float    can_hands_off_sec = 0.0f;
-float    can_head_delta = 0.0f;
-
 // 1. CAN 메시지가 도착하면 실행되는 함수
 void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
 {
@@ -494,9 +498,9 @@ float Fuzzy_Trapezoid(float x, float a, float b)
 
 // 2. 통합 위험도 계산 함수
 // 모든 입력값은 Factor가 적용된 "실수(float)" 형태여야 함
-uint8_t Compute_Integrated_Risk(uint8_t perclos, float steer_std, float hands_off_sec, float head_delta)
+uint8_t Compute_Integrated_Risk(uint8_t perclos, float steer_std, float hands_off_sec, float head_delta, float no_op_sec)
 {
-    // --- [Step 1] Fuzzification (입력값 -> 위험도 0.0~1.0 변환) ---
+    //============================[Step 1] Fuzzification (입력값 -> 위험도 0.0~1.0 변환)==================
 
     // 1. Vision (PERCLOS): 40% 부터 위험 시작, 60%면 만점
     float score_eye = Fuzzy_Trapezoid((float)perclos, 40.0f, 60.0f);
@@ -513,8 +517,18 @@ uint8_t Compute_Integrated_Risk(uint8_t perclos, float steer_std, float hands_of
     float abs_head = (float)ABS(head_delta);
     float score_head = Fuzzy_Trapezoid(abs_head, 5.0f, 15.0f);
 
+    // 10초 이상 가만히 있으면 점수가 오르기 시작해서 15초면 50점(주의) 정도 줌. 10초~15초 사이 주의 단계 상승
+    float score_noop  = Fuzzy_Trapezoid(no_op_sec, 10.0f, 20.0f) * 0.6f; // 최대 60점까지만 (경고 수준)
 
-    // --- [Step 2] Rule Evaluation (규칙 적용) ---
+
+    //================================[Step 2] Rule Evaluation (규칙 적용)=============================
+
+    // === [솔루션 1] 눈부심 방지 (False Alarm Rejection) ===
+    // 눈은 감겼는데(1.0), 핸들/손/머리가 너무 멀쩡하면(0.2 이하) -> 눈부심으로 간주하고 점수 삭감
+    if (score_eye > 0.8f && score_steer < 0.2f && score_hands < 0.2f && score_head < 0.2f)
+    {
+        score_eye *= 0.3f; // 점수를 30%로 깎아버림 (Normal 유지)
+    }
 
     // [Rule 1] 서서히 오는 졸음 (눈 + 핸들)
     // 눈도 감기고 핸들도 흔들리면 위험도 증가 (Max 연산)
@@ -524,14 +538,18 @@ uint8_t Compute_Integrated_Risk(uint8_t perclos, float steer_std, float hands_of
     // 이 둘 중 하나라도 발생하면 즉시 위험도 100%로 치솟아야 함
     float acute_danger = (score_hands > score_head) ? score_hands : score_head;
 
+    // ★ 무조작 룰 통합
+    // 무조작은 '은근한 졸음'이므로 chronic에 포함
+    if (score_noop > chronic_drowsiness) chronic_drowsiness = score_noop;
 
-    // --- [Step 3] Defuzzification (최종 점수 산출) ---
+    //=================================[Step 3] Defuzzification (최종 점수 산출)=========================
 
     // 안전 최우선: "만성 졸음"과 "급박한 위험" 중 더 높은 점수 채택
     float final_risk = (chronic_drowsiness > acute_danger) ? chronic_drowsiness : acute_danger;
 
     // 0~100점으로 변환
     return (uint8_t)(final_risk * 100.0f);
+
 }
 
 // CAN 송신 함수 (코드를 깔끔하게 하기 위해 분리)
@@ -569,12 +587,44 @@ void Send_System_State_To_CAN(uint8_t state, uint8_t perclos)
 // 메인 루프에서 호출하는 함수
 void Update_System_State()
 {
+
+    // === [솔루션 3] 고장 감지 (Fail-Safe) ===
+    // 비전이나 섀시 쪽에서 에러 플래그가 하나라도 0이 아니면 고장 처리
+    if (vision_rx_packet.err_flag != 0 || chassis_info.err_flag != 0)
+    {
+        printf("🔧 SENSOR ERROR DETECTED! (Fail-Safe Mode)\r\n");
+        // 여기서 별도의 LED를 켜거나 기능을 제한할 수 있음
+        return; // 로직 중단
+    }
+
+    // === [솔루션 2] 무조작(No-Op) 감지 ===
+    // 현재 조향각(ICD V0.1의 Steering_Angle_Cur 사용 가정)
+    // 변화량이 2도 미만이면 타이머 증가
+    int16_t diff = chassis_info.steering_angle - prev_steering_angle;
+    if (diff < 0) diff = -diff; // 절대값
+
+    if (diff < 20) // 2.0도 미만 (Factor 0.1 가정 시 값 20)
+    {
+        no_op_timer += 100; // 100ms 증가
+    }
+    else
+    {
+        no_op_timer = 0; // 움직임 감지되면 리셋
+        prev_steering_angle = chassis_info.steering_angle; // 기준점 갱신
+    }
+
+    // 10초 이상 무조작이면 '좀비/눈뜬졸음' 의심 (Factor 0.1 -> 10.0초)
+    float no_op_sec = no_op_timer / 1000.0f;
+
+
+
     // 퍼지 로직 계산
     uint8_t risk_score = Compute_Integrated_Risk(
                             can_perclos,
                             can_steer_std,
                             can_hands_off_sec,
-                            can_head_delta
+                            can_head_delta,
+							no_op_sec
                          );
 
     // 상태 천이 (Hysteresis 적용)
@@ -596,6 +646,8 @@ void Update_System_State()
         	break;
     }
 
+    // 디버깅용 출력
+    printf("Risk: %d (NoOp: %.1fs)\r\n", risk_score, no_op_sec);
     printf("Risk: %d (Hands: %.1fs, Head: %.1fcm)\r\n", risk_score, can_hands_off_sec, can_head_delta);
 }
 
