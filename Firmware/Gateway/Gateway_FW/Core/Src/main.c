@@ -50,7 +50,7 @@ UART_HandleTypeDef huart1;
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-
+uint32_t last_execution_time = 0;
 // === 전역 변수 실제 생성 (메모리 할당) ===
 SystemState_t current_state = STATE_NORMAL;
 int16_t prev_steering_angle = 0;
@@ -62,8 +62,8 @@ uint8_t RxData[8];
 // UART 버퍼 및 구조체 변수들
 uint8_t uart_rx_buffer[8];
 VisionData_t vision_rx_packet = {0};
-ChassisData_t chassis_info = {0};
-BodyData_t body_info = {0};
+extern ChassisData_t chassis_data;
+extern BodyData_t body_data;
 
 /* USER CODE END PV */
 
@@ -145,8 +145,12 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	  Update_System_State();
-	  HAL_Delay(100);
+	  if (HAL_GetTick() - last_execution_time >= 100)
+	  {
+	      last_execution_time = HAL_GetTick(); // 시간 갱신
+
+	      Update_System_State(); // 100ms마다 실행됨
+	  }
 
   }
   /* USER CODE END 3 */
@@ -370,7 +374,7 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
 void Update_System_State()
 {
     // 비전이나 섀시 쪽에서 에러 플래그가 하나라도 0이 아니면 고장 처리
-    if (vision_rx_packet.err_flag != 0 || chassis_info.err_flag != 0)
+    if (vision_rx_packet.err_flag != 0 || chassis_data.err_flag != 0)
     {
         printf("🔧 SENSOR ERROR DETECTED! (Fail-Safe Mode)\r\n");
         return;
@@ -451,8 +455,8 @@ void Update_System_State()
                 vision_data.perclos,
                 body_data.hands_off_sec,
                 body_data.head_delta_cm,
-                chassis_data.steering_std_dev, // 혹은 steering_angle
-                no_op_sec // <--- 범인은 이 녀석일 겁니다!
+                chassis_data.steering_std_dev,
+                no_op_sec
                 );
 }
 
