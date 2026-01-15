@@ -33,7 +33,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+#define ABS(x) ((x) > 0 ? (x) : -(x)) // 절대값 계산용 매크로 (math.h 없어도 됨)
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -383,24 +383,64 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE BEGIN 4 */
 
+
+// ==========================================
+// [CAN Logic Engine Final]
+// ICD V0.1.1 기반 CAN 통신 로직
+// ==========================================
+
+// 전역 변수 (CAN 수신값 저장용)
+uint8_t  can_perclos = 0;
+float    can_steer_std = 0.0f;
+float    can_hands_off_sec = 0.0f;
+float    can_head_delta = 0.0f;
+
 // 1. CAN 메시지가 도착하면 실행되는 함수
 void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
 {
-  // 메시지 가져오기
-  if (HAL_CAN_GetRxMessage(hcan, CAN_RX_FIFO0, &RxHeader, RxData) != HAL_OK)
-  {
-    return;
-  }
+//  // 메시지 가져오기
+//  if (HAL_CAN_GetRxMessage(hcan, CAN_RX_FIFO0, &RxHeader, RxData) != HAL_OK)
+//  {
+//    return;
+//  }
+//
+//  // ID 별로 분류해서 저장
+//  if (RxHeader.StdId == 0x201) // Chassis ECU
+//  {
+//    memcpy(&chassis_info, RxData, sizeof(Chassis_Data_t));
+//  }
+//  else if (RxHeader.StdId == 0x301) // Body ECU
+//  {
+//    memcpy(&body_info, RxData, sizeof(Body_Data_t));
+//  }
 
-  // ID 별로 분류해서 저장
-  if (RxHeader.StdId == 0x201) // Chassis ECU
-  {
-    memcpy(&chassis_info, RxData, sizeof(Chassis_Data_t));
-  }
-  else if (RxHeader.StdId == 0x301) // Body ECU
-  {
-    memcpy(&body_info, RxData, sizeof(Body_Data_t));
-  }
+
+    CAN_RxHeaderTypeDef RxHeader;
+    uint8_t RxData[8];
+
+    if (HAL_CAN_GetRxMessage(hcan, CAN_RX_FIFO0, &RxHeader, RxData) != HAL_OK) return;
+
+    // === 2. Chassis Node (0x201) ===
+    else if (RxHeader.StdId == 0x201)
+    {
+        // Byte 0-1: Steering_StdDev (uint16_t, Factor 0.01)
+        uint16_t raw_std = (RxData[1] << 8) | RxData[0];
+        can_steer_std = raw_std * 0.01f; // 2000 -> 20.0 변환
+    }
+
+    // === 3. Body Node (0x301) - 전처리된 센서 값 ===
+    else if (RxHeader.StdId == 0x301)
+    {
+        // Byte 0: Head_Delta_cm (int8_t, Factor 1)
+        int8_t raw_head = (int8_t)RxData[0];
+        can_head_delta = (float)raw_head;
+
+        // Byte 1: Hands_Off_Time (uint8_t, Factor 0.1)
+        uint8_t raw_time = RxData[1];
+        can_hands_off_sec = raw_time * 0.1f; // 50 -> 5.0초 변환
+    }
+
+
 }
 
 // 2. UART(Vision) 데이터가 도착하면 실행되는 함수
@@ -437,9 +477,62 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
   }
 }
 
-/* USER CODE BEGIN 4 */
+// ==========================================
+// [Fuzzy Logic Engine Final]
+// ICD V0.1.1 기반 통합 졸음 판단
+// ==========================================
 
-// ... (기존 콜백 함수들은 그대로 두세요) ...
+// 1. 퍼지 멤버십 함수 (사다리꼴)
+// 입력값 x가 [a, b] 구간에서 0->1로 상승, [c, d] 구간에서 1->0으로 하강
+// 여기서는 위험도 계산이므로 b 이후로는 계속 1.0 유지하는 형태(Open Right)를 주로 씀
+float Fuzzy_Trapezoid(float x, float a, float b)
+{
+    if (x <= a) return 0.0f;           // 안전 구간
+    if (x >= b) return 1.0f;           // 위험 구간 (Max)
+    return (x - a) / (b - a);          // 위험도 상승 구간 (0.0 ~ 1.0)
+}
+
+// 2. 통합 위험도 계산 함수
+// 모든 입력값은 Factor가 적용된 "실수(float)" 형태여야 함
+uint8_t Compute_Integrated_Risk(uint8_t perclos, float steer_std, float hands_off_sec, float head_delta)
+{
+    // --- [Step 1] Fuzzification (입력값 -> 위험도 0.0~1.0 변환) ---
+
+    // 1. Vision (PERCLOS): 40% 부터 위험 시작, 60%면 만점
+    float score_eye = Fuzzy_Trapezoid((float)perclos, 40.0f, 60.0f);
+
+    // 2. Chassis (Steering): 표준편차 20부터 위험 시작, 40이면 만점
+    float score_steer = Fuzzy_Trapezoid(steer_std, 20.0f, 40.0f);
+
+    // 3. Body (Hands Off): 2.0초부터 위험 시작, 5.0초면 만점
+    // [근거] NHTSA 기준 2초 이상 주시 태만 위험
+    float score_hands = Fuzzy_Trapezoid(hands_off_sec, 2.0f, 5.0f);
+
+    // 4. Body (Head Delta): 5cm부터 위험 시작, 15cm면 만점
+    // 숙이거나(-) 젖히거나(+) 모두 위험하므로 절대값 사용
+    float abs_head = (float)ABS(head_delta);
+    float score_head = Fuzzy_Trapezoid(abs_head, 5.0f, 15.0f);
+
+
+    // --- [Step 2] Rule Evaluation (규칙 적용) ---
+
+    // [Rule 1] 서서히 오는 졸음 (눈 + 핸들)
+    // 눈도 감기고 핸들도 흔들리면 위험도 증가 (Max 연산)
+    float chronic_drowsiness = (score_eye > score_steer) ? score_eye : score_steer;
+
+    // [Rule 2] 급박한 위험 (손 뗌 OR 고개 푹)
+    // 이 둘 중 하나라도 발생하면 즉시 위험도 100%로 치솟아야 함
+    float acute_danger = (score_hands > score_head) ? score_hands : score_head;
+
+
+    // --- [Step 3] Defuzzification (최종 점수 산출) ---
+
+    // 안전 최우선: "만성 졸음"과 "급박한 위험" 중 더 높은 점수 채택
+    float final_risk = (chronic_drowsiness > acute_danger) ? chronic_drowsiness : acute_danger;
+
+    // 0~100점으로 변환
+    return (uint8_t)(final_risk * 100.0f);
+}
 
 // CAN 송신 함수 (코드를 깔끔하게 하기 위해 분리)
 void Send_System_State_To_CAN(uint8_t state, uint8_t perclos)
@@ -473,33 +566,37 @@ void Send_System_State_To_CAN(uint8_t state, uint8_t perclos)
     }
 }
 
+// 메인 루프에서 호출하는 함수
 void Update_System_State()
 {
-    // 1. 판단 로직 (기존과 동일)
-    uint8_t is_drowsy_vision = (vision_rx_packet.perclos > 80) || (vision_rx_packet.eye_state);
-    uint8_t is_unstable_steering = (chassis_info.steering_std_dev > 30);
+    // 퍼지 로직 계산
+    uint8_t risk_score = Compute_Integrated_Risk(
+                            can_perclos,
+                            can_steer_std,
+                            can_hands_off_sec,
+                            can_head_delta
+                         );
 
-    // 상태 천이 로직
-    if (is_drowsy_vision && is_unstable_steering)
+    // 상태 천이 (Hysteresis 적용)
+    switch (current_state)
     {
-        if (current_state != STATE_DANGER) printf(">>> DETECTED: DANGER!\r\n");
-        current_state = STATE_DANGER;
-    }
-    else if (is_drowsy_vision || is_unstable_steering)
-    {
-        if (current_state != STATE_WARNING) printf(">>> DETECTED: WARNING!\r\n");
-        current_state = STATE_WARNING;
-    }
-    else
-    {
-        if (current_state != STATE_NORMAL) printf(">>> RECOVERED: Normal\r\n");
-        current_state = STATE_NORMAL;
+        case STATE_NORMAL:
+            if (risk_score >= 80) current_state = STATE_WARNING; // 80점 이상 주의
+            break;
+
+        case STATE_WARNING:
+            if (risk_score >= 95) current_state = STATE_DANGER;  // 95점 이상 위험
+            else if (risk_score < 60) current_state = STATE_NORMAL; // 복귀
+            break;
+
+        case STATE_DANGER:
+            if (risk_score < 85) current_state = STATE_WARNING;
+            break;
+        case STATE_FAULT:
+        	break;
     }
 
-    // === ★추가된 부분★: 판단 결과를 CAN으로 전송 ===
-    // 상태값이나 PERCLOS가 변할 때만 보내는 게 정석이지만,
-    // 지금은 테스트니까 쿨타임 없이 매번 보냅니다. (메인 루프 딜레이 따름)
-    Send_System_State_To_CAN((uint8_t)current_state, vision_rx_packet.perclos);
+    printf("Risk: %d (Hands: %.1fs, Head: %.1fcm)\r\n", risk_score, can_hands_off_sec, can_head_delta);
 }
 
 /* USER CODE END 4 */
