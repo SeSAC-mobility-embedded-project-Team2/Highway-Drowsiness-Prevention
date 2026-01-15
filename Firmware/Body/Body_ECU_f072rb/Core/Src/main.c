@@ -89,6 +89,8 @@ int __io_putchar(int ch) {
     HAL_UART_Transmit(&huart2, (uint8_t *)&ch, 1, 0xFFFF);
     return ch;
 }
+
+uint8_t hands_off_counter = 0; // 0.1초마다 증가할 변수
 /* USER CODE END 0 */
 
 /**
@@ -504,16 +506,26 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE BEGIN 4 */
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
-	if (htim->Instance == TIM6) {
-		// 모든 센서 데이터 준비
-		int8_t head_delta = Ultrasonic_Get_Head_Delta();
-		uint16_t current_co2 = CO2_Get_Value();
-		uint8_t touch_status = Touch_Get_Status();
-		uint16_t current_baseline = Ultrasonic_Get_Baseline(); // 기준 거리 가져오기
+    if (htim->Instance == TIM6) {
+        // 1. 센서 값 읽기
+        int8_t delta = Ultrasonic_Get_Head_Delta();
+        uint8_t touch = Touch_Get_Status();
+        uint8_t raw_dist = (uint8_t)Ultrasonic_Get_Distance();
 
-		// CAN 전송 (매개변수 4개 전달)
-		CAN_Tx_SensorData(head_delta, touch_status, current_co2, current_baseline);
-	}
+        // 2. Hands_Off_Time 계산 (0.1초 단위)
+        if (touch == 0) { // 손을 떼고 있다면
+            if (hands_off_counter < 255) hands_off_counter++; // 0.1초 누적
+        } else {
+            hands_off_counter = 0; // 손을 잡으면 즉시 리셋
+        }
+
+        // 3. 변경된 명세로 CAN 전송
+        CAN_Tx_SensorData(delta, hands_off_counter, raw_dist, touch);
+
+        // 로그 출력
+        printf("[CAN] Delta:%d | OffTime:%d | Raw:%u | Touch:%d\r\n",
+                delta, hands_off_counter, raw_dist, touch);
+    }
 }
 /* USER CODE END 4 */
 
