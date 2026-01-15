@@ -6,7 +6,7 @@ jobs:
   cppcheck-sarif:
     runs-on: ubuntu-latest
     permissions:
-      security-events: write # [필수] 보안 탭에 리포트를 기록할 권한
+      security-events: write  # 보안 탭 기록 권한
       actions: read
       contents: read
 
@@ -14,14 +14,35 @@ jobs:
       # 1. 소스 코드 가져오기
       - uses: actions/checkout@v4
 
-      # 2. Cppcheck 실행 및 SARIF 변환 (액션 활용)
-      - name: Run Cppcheck
-        uses: artemnovichkov/cppcheck-sarif@v1
+      # 2. Python 환경 설정 (변환 도구 설치용)
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
-          paths: .  # 현재 폴더 검사
-          # exclude: Drivers/ # (옵션) 제외할 폴더가 있다면 주석 해제 후 입력
+          python-version: '3.x'
 
-      # 3. GitHub Security 탭에 결과 업로드
+      # 3. Cppcheck 및 변환 도구 설치 (표준 패키지 사용)
+      # - cppcheck: 우분투 공식 저장소에서 설치
+      # - cppcheck-sarif: 파이썬 공식 패키지(PyPI)에서 설치
+      - name: Install Tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cppcheck
+          pip install cppcheck-sarif
+
+      # 4. Cppcheck 실행 (XML 리포트 생성)
+      - name: Run Cppcheck
+        run: |
+          # --xml: 결과를 xml 포맷으로 출력
+          # 2> report.xml: 에러 내용을 report.xml 파일에 저장
+          cppcheck --enable=all --inconclusive --xml --xml-version=2 . 2> report.xml
+
+      # 5. XML을 SARIF 포맷으로 변환
+      - name: Convert to SARIF
+        run: |
+          # 설치한 파이썬 도구를 이용해 변환
+          cppcheck-sarif --input-file report.xml --output-file cppcheck-result.sarif
+
+      # 6. GitHub Security 탭에 결과 업로드
       - name: Upload SARIF file
         uses: github/codeql-action/upload-sarif@v3
         with:
