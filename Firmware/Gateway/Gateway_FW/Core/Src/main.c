@@ -158,7 +158,7 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-
+	  chassis_info.steering_std_dev = 50;
 	  printf("=== Raw Data Analysis ===\r\n");
 	  // 받은 데이터를 바이트 배열처럼 접근해서 출력
 	  uint8_t *ptr = (uint8_t*)&vision_rx_packet;
@@ -437,52 +437,71 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
   }
 }
 
-void Update_System_State()
+/* USER CODE BEGIN 4 */
+
+// ... (기존 콜백 함수들은 그대로 두세요) ...
+
+// CAN 송신 함수 (코드를 깔끔하게 하기 위해 분리)
+void Send_System_State_To_CAN(uint8_t state, uint8_t perclos)
 {
-    // === 1. 통신 상태 체크 (Heartbeat) ===
-    // (나중에 구현: 일정 시간 동안 데이터 안 오면 FAULT로 이동)
+    CAN_TxHeaderTypeDef TxHeader;
+    uint8_t TxData[8] = {0,}; // 0으로 초기화
+    uint32_t TxMailbox;
 
-    // === 2. 졸음/부주의 판단 로직 ===
+    // === CAN 메시지 설정 ===
+    TxHeader.StdId = 0x100;         // Gateway의 메시지 ID (예: 0x100)
+    TxHeader.RTR = CAN_RTR_DATA;
+    TxHeader.IDE = CAN_ID_STD;
+    TxHeader.DLC = 8;               // 데이터 길이: 8바이트만 사용
+    TxHeader.TransmitGlobalTime = DISABLE;
 
-    // 조건 A: 눈을 감았는가? (PERCLOS 80% 이상이거나 눈 감음 상태)
-    uint8_t is_drowsy_vision = (vision_rx_packet.perclos > 80) || (vision_rx_packet.eye_state);
+    // === 데이터 채우기 ===
+    TxData[0] = state;    // Byte 0: 현재 상태 (0:Normal, 1:Warning, 2:Danger)
+    TxData[1] = perclos;  // Byte 1: 졸음 수치 (0~100)
+    // 나머지 TxData[2]~[7]은 0
 
-    // 조건 B: 운전대가 불안한가? (표준편차 30 이상 - 가상의 임계값)
-    // (지금은 CAN 연결 안 됐으니 0이라고 가정하거나 더미값 사용)
-    uint8_t is_unstable_steering = (chassis_info.steering_std_dev > 30);
-
-    // === 3. 상태 천이 (State Transition) ===
-
-    // [Normal] -> [Danger] : 눈 감고 + 핸들 불안
-    if (current_state == STATE_NORMAL || current_state == STATE_WARNING)
+    // === 발사! ===
+    if (HAL_CAN_AddTxMessage(&hcan, &TxHeader, TxData, &TxMailbox) != HAL_OK)
     {
-        if (is_drowsy_vision && is_unstable_steering)
-        {
-            current_state = STATE_DANGER;
-            printf(">>> DETECTED: DANGER! (Eye + Steering)\r\n");
-        }
-        // [Normal] -> [Warning] : 눈만 감음 OR 핸들만 불안
-        else if (is_drowsy_vision || is_unstable_steering)
-        {
-            current_state = STATE_WARNING;
-            printf(">>> DETECTED: WARNING! (Check Driver)\r\n");
-        }
-        else
-        {
-            current_state = STATE_NORMAL;
-        }
+        // 주석 해제!
+        printf("CAN Tx Error (Mailbox Full or Bus Off)\r\n");
     }
-
-    // [Danger] -> [Normal] : 다시 눈 뜨고 안정되면 복귀 (히스테리시스 필요하지만 일단 단순하게)
-    if (current_state == STATE_DANGER)
+    else
     {
-        if (!is_drowsy_vision && !is_unstable_steering)
-        {
-            current_state = STATE_NORMAL;
-            printf(">>> RECOVERED: Normal State\r\n");
-        }
+        // 성공 시에도 출력해서 확인
+        printf("CAN Tx Success! (Sent to Mailbox)\r\n");
     }
 }
+
+void Update_System_State()
+{
+    // 1. 판단 로직 (기존과 동일)
+    uint8_t is_drowsy_vision = (vision_rx_packet.perclos > 80) || (vision_rx_packet.eye_state);
+    uint8_t is_unstable_steering = (chassis_info.steering_std_dev > 30);
+
+    // 상태 천이 로직
+    if (is_drowsy_vision && is_unstable_steering)
+    {
+        if (current_state != STATE_DANGER) printf(">>> DETECTED: DANGER!\r\n");
+        current_state = STATE_DANGER;
+    }
+    else if (is_drowsy_vision || is_unstable_steering)
+    {
+        if (current_state != STATE_WARNING) printf(">>> DETECTED: WARNING!\r\n");
+        current_state = STATE_WARNING;
+    }
+    else
+    {
+        if (current_state != STATE_NORMAL) printf(">>> RECOVERED: Normal\r\n");
+        current_state = STATE_NORMAL;
+    }
+
+    // === ★추가된 부분★: 판단 결과를 CAN으로 전송 ===
+    // 상태값이나 PERCLOS가 변할 때만 보내는 게 정석이지만,
+    // 지금은 테스트니까 쿨타임 없이 매번 보냅니다. (메인 루프 딜레이 따름)
+    Send_System_State_To_CAN((uint8_t)current_state, vision_rx_packet.perclos);
+}
+
 /* USER CODE END 4 */
 
 /**

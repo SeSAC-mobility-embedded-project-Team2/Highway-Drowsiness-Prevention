@@ -103,6 +103,9 @@ void HAL_CAN_MspInit(CAN_HandleTypeDef* hcan)
     PB8     ------> CAN_RX
     PB9     ------> CAN_TX
     */
+
+	  __HAL_RCC_AFIO_CLK_ENABLE();     // 1. AFIO 클럭 켜기
+	  __HAL_AFIO_REMAP_CAN1_2();       // 2. CAN1 핀을 PA11/12 -> PB8/PB9로 변경 (Remap 2)
     GPIO_InitStruct.Pin = GPIO_PIN_8;
     GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
