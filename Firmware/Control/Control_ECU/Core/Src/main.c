@@ -170,8 +170,8 @@ int main(void)
 
   HAL_UART_Receive_IT(&huart2, &uart_rcvbyte, 1);	// 최초 수신 시작
 
-  sprintf(debugMsg, "Control ECU System Started...\r\n");
-  HAL_UART_Transmit(&huart2, (uint8_t*)debugMsg, strlen(debugMsg), 100);
+  sprintf(debugMsg, "System Ready...\r\n");
+  HAL_UART_Transmit(&huart2, (uint8_t*)debugMsg, strlen(debugMsg), 10);
 
   /* USER CODE END 2 */
 
@@ -237,7 +237,7 @@ int main(void)
 	  {
 		  // 상태 변경 시 매트릭스 초기화 및 딜레이
 		  Max7219_All_Off();
-		  HAL_Delay(50);
+		  HAL_Delay(500);
 
 		  switch(currentSystemStatus)
 		  {
@@ -250,7 +250,7 @@ int main(void)
 			  case STATUS_WARNING:
 					Buzzer_Update(STATUS_WARNING);
 					Servo_Update(STATUS_WARNING);
-					Max7219_ScrollText("WARNING  ", 3); // 3회 반복 출력
+					Max7219_ScrollText("WARNING", 3); // 3회 반복 출력
 					break;
 
 			  case STATUS_DANGER:
