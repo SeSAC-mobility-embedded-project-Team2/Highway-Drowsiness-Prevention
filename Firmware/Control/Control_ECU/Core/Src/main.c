@@ -22,6 +22,8 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "stm32f1xx_nucleo.h"
+#include "ServoMotor.h"
+#include "Max7219.h"
 #include "Buzzer.h"
 #include <stdio.h>
 #include <string.h>
@@ -43,8 +45,9 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
-TIM_HandleTypeDef htim2;
 
+SPI_HandleTypeDef hspi1;
+TIM_HandleTypeDef htim2;
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
@@ -58,25 +61,27 @@ typedef enum {
 	STATUS_FAULT   = 3
 } SystemStatus_t;
 
-// 현재 시스템 상태 플래그
-SystemStatus_t currentSystemStatus = STATUS_NORMAL;
-uint8_t mrmTriggerFlag = 0;		// MRM : Minimum Risk Maneuver, '최소 위험 기동'
-
 // UART 패킷 수신용
 uint8_t rxPacket[4];				// [Header, Alert_Level, MRM_Trigger, Checksum]
-uint8_t rxIndex = 0;				// 수신 바이트 위치 카운트 ... ?
+uint8_t rxIndex = 0;				// 수신 바이트 위치 카운트
 uint8_t uart_rcvbyte;				// 1바이트 임시 수신용
 volatile uint8_t bPacketReady = 0;	// 패킷 완성 플래그
+char debugMsg[100];					// UART 송신용 버퍼
 
 /*------------------------- 전역 변수 및 상태 정의 추가 -----------------------------*/
 
+// 현재 시스템 상태 플래그
+SystemStatus_t currentSystemStatus = STATUS_NORMAL;
+SystemStatus_t lastStatus = STATUS_NORMAL; // 증복 방지용
+SystemStatus_t lastStatusForDebug = STATUS_FAULT;
+
+// for ServoMotor
 extern TIM_HandleTypeDef htim2; // TIM2 핸들러 사용
 
 //for UART
-/* buffer */
-static uint8_t buff[BUFSIZE] = "Hello World\r\n";
 uint8_t uart_rcvbuf;
 volatile uint8_t bUART_RX = 0;
+
 
 /* USER CODE END PV */
 
@@ -85,6 +90,7 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_TIM2_Init(void);
+static void MX_SPI1_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -151,35 +157,29 @@ int main(void)
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
+  /* 주변장치 초기화 */
   MX_GPIO_Init();
   MX_USART2_UART_Init();
   MX_TIM2_Init();
+  MX_SPI1_Init();
+
   /* USER CODE BEGIN 2 */
 
-  Servo_Init(&htim2); // TIM2 초기화
+  Max7219_Init();		// for MAX7219    초기화
+  Servo_Init(&htim2); 	// for ServoMotor 초기화
 
-  HAL_UART_Transmit(&huart2, buff, strlen((const char *)buff), 100);
+  HAL_UART_Receive_IT(&huart2, &uart_rcvbyte, 1);	// 최초 수신 시작
 
-  // 최초 수신 시작
-
-  HAL_UART_Receive_IT(&huart2, &uart_rcvbyte, 1);
+  sprintf(debugMsg, "Control ECU System Started...\r\n");
+  HAL_UART_Transmit(&huart2, (uint8_t*)debugMsg, strlen(debugMsg), 100);
 
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+
   while (1)
   {
-	  /* 에코 로직은 패킷 수신과 충돌할 수 있으므로 잠시 주석 처리 */
-	  /*
-	  // for UART_RX
-	  if(bUART_RX)
-	  {
-		  bUART_RX = 0;
-		  HAL_UART_Transmit(&huart2, &uart_rcvbuf, 1, 300);
-		  HAL_UART_Receive_IT(&huart2, &uart_rcvbuf, 1);
-	  }
-	  */
 
 	  /*----------------------------- 패킷 검사 및 해석 -------------------------------*/
 
@@ -219,35 +219,69 @@ int main(void)
 		  }
 	  }
 
-	  // --- 여기서부터 상태 플래그에 따라 모듈 제어 예정 ---
-	  switch(currentSystemStatus)
+
+	  /* 상태 변경 시 디버그 메시지 1회 출력 (무한 반복 방지) */
+	  if (currentSystemStatus != lastStatusForDebug)
 	  {
-	      case STATUS_NORMAL:
-	           // TODO: LED 정지, 모터 정상 동작 로직 위치
-	    	  Buzzer_Off();
-	    	  Servo_Update(STATUS_NORMAL);
-	           break;
+			sprintf(debugMsg, ">> Status Changed: %d\r\n", currentSystemStatus);
+			HAL_UART_Transmit(&huart2, (uint8_t*)debugMsg, strlen(debugMsg), 10);
+			lastStatusForDebug = currentSystemStatus;
+	   }
 
-	      case STATUS_WARNING:
-	            // TODO: 주의 알람 로직 위치
-	    	  	Buzzer_Update(STATUS_WARNING);
-	    	  	Servo_Update(STATUS_WARNING);
-	    	    break;
 
-	      case STATUS_DANGER:
-	            // TODO: 즉시 정지 및 비상등 로직 위치
-	    	  	Buzzer_Update(STATUS_DANGER);
-	    	  	Servo_Update(STATUS_DANGER);
-	    	    break;
+	  // --- 여기서부터 상태 플래그에 따라 모듈 제어 예정 ---
 
-	      case STATUS_FAULT:
-	      	    // 시스템 고장 시에도 경고를 줍니다.
-	            Buzzer_Update(STATUS_WARNING);
-     	        break;
+	  /* [요구사항 명세서] 상태 플래그에 따른 모듈 제어 */
+	  /* 이전 상태와 다를 때만(신호가 새로 들어왔을 때만) 동작 실행 */
+	  if (currentSystemStatus != lastStatus)
+	  {
+		  // 상태 변경 시 매트릭스 초기화 및 딜레이
+		  Max7219_All_Off();
+		  HAL_Delay(50);
 
-	      default:
-	            break;
+		  switch(currentSystemStatus)
+		  {
+			  case STATUS_NORMAL:
+				   Buzzer_Off();
+				   Servo_Update(STATUS_NORMAL);
+				   Max7219_All_Off();
+				   break;
+
+			  case STATUS_WARNING:
+					Buzzer_Update(STATUS_WARNING);
+					Servo_Update(STATUS_WARNING);
+					Max7219_ScrollText("WARNING  ", 3); // 3회 반복 출력
+					break;
+
+			  case STATUS_DANGER:
+					Buzzer_Update(STATUS_DANGER);
+					Servo_Update(STATUS_DANGER);
+					Max7219_ScrollText("DANGER  ", 3);	// 3회 반복 출력
+					break;
+
+			  case STATUS_FAULT:
+					Buzzer_Update(STATUS_WARNING);
+					Max7219_All_Off();
+					break;
+
+			  default:
+					break;
+		  }
+
+		  // 동작 완료 후 lastStatus 업데이트 (다음 신호 대기)
+		  lastStatus = currentSystemStatus;
 	  }
+
+
+	  /* 모듈별 업데이트 (비차단 방식) */
+	  // 주의: 아래 switch 문에서 Blocking 방식(HAL_Delay 사용)으로 동작할
+	  // 문구 출력 중에는 이 업데이트가 일시 정지될 수 있습니다.
+	  Buzzer_Update((uint8_t)currentSystemStatus);
+	  Servo_Update((uint8_t)currentSystemStatus);
+
+	  /* [요구사항] 과부하 방지를 위한 미세 딜레이 */
+	  // 10ms 딜레이를 통해 CPU 발열 및 무한 루프 과부하를 방지합니다.
+	  HAL_Delay(10);
 
 	  /*----------------------------- 패킷 수신 함수 추가 -------------------------------*/
 
@@ -297,6 +331,44 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
+}
+
+/**
+  * @brief SPI1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_SPI1_Init(void)
+{
+
+  /* USER CODE BEGIN SPI1_Init 0 */
+
+  /* USER CODE END SPI1_Init 0 */
+
+  /* USER CODE BEGIN SPI1_Init 1 */
+
+  /* USER CODE END SPI1_Init 1 */
+  /* SPI1 parameter configuration*/
+  hspi1.Instance = SPI1;
+  hspi1.Init.Mode = SPI_MODE_MASTER;
+  hspi1.Init.Direction = SPI_DIRECTION_2LINES;
+  hspi1.Init.DataSize = SPI_DATASIZE_8BIT;
+  hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
+  hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
+  hspi1.Init.NSS = SPI_NSS_SOFT;
+  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_64;
+  hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
+  hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
+  hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
+  hspi1.Init.CRCPolynomial = 10;
+  if (HAL_SPI_Init(&hspi1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN SPI1_Init 2 */
+
+  /* USER CODE END SPI1_Init 2 */
+
 }
 
 /**
@@ -407,9 +479,13 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOD_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
+  __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(BUZZER_GPIO_Port, BUZZER_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(MAX7219_CS_GPIO_Port, MAX7219_CS_Pin, GPIO_PIN_SET);
 
   /*Configure GPIO pin : BUZZER_Pin */
   GPIO_InitStruct.Pin = BUZZER_Pin;
@@ -417,6 +493,13 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(BUZZER_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : MAX7219_CS_Pin */
+  GPIO_InitStruct.Pin = MAX7219_CS_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+  HAL_GPIO_Init(MAX7219_CS_GPIO_Port, &GPIO_InitStruct);
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
 
