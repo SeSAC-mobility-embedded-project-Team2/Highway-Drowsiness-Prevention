@@ -53,6 +53,7 @@ UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
 uint32_t last_execution_time = 0;
+volatile uint8_t timer_100ms_flag = 0;
 // === 전역 변수 실제 생성 (메모리 할당) ===
 SystemState_t current_state = STATE_NORMAL;
 int16_t prev_steering_angle = 0;
@@ -149,11 +150,11 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	  if (HAL_GetTick() - last_execution_time >= 100)
+	  if (timer_100ms_flag == 1)
 	  {
-	      last_execution_time = HAL_GetTick(); // 시간 갱신
+		  timer_100ms_flag = 0;
 
-	      Update_System_State(); // 100ms마다 실행됨
+		  Update_System_State();
 	  }
 
   }
@@ -401,6 +402,15 @@ int _write(int file, char *ptr, int len)
     return len;
 }
 #endif
+
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+    if (htim->Instance == TIM3)
+    {
+        timer_100ms_flag = 1;
+    }
+}
+
 // 1. UART 수신 콜백 (Vision)
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
