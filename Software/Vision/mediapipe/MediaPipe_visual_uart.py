@@ -8,14 +8,14 @@ import struct
 from collections import deque
 
 # rpicam 관련 프로세스 모두 종료
-#pkill -f rpicam
-
 # libcamera 관련 프로세스 모두 종료
-#pkill -f libcamera
-
 # 실행 중인 파이썬 코드 모두 종료 (이전에 멈춘 코드가 백그라운드에 있을 수 있음)
-#pkill -f python
-
+'''
+pkill -f rpicam
+pkill -f libcamera
+pkill -f python
+rpicam-hello -t 5000
+'''
 # ==========================================
 # [1] 환경 설정 (Configuration)
 # ==========================================
@@ -23,7 +23,7 @@ from collections import deque
 EAR_THRESHOLD = 0.20 
 # >> PERCLOS 계산을 위한 히스토리 버퍼 설정
 FPS_ESTIMATE = 30             
-WINDOW_SECONDS = 5            
+WINDOW_SECONDS = 3       
 MAX_HISTORY = FPS_ESTIMATE * WINDOW_SECONDS 
 
 # >> USB 시리얼 통신 설정
