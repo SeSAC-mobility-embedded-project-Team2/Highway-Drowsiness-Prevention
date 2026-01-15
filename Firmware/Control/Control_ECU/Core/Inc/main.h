@@ -61,6 +61,10 @@ void Error_Handler(void);
 /* Private defines -----------------------------------------------------------*/
 #define BUZZER_Pin GPIO_PIN_0
 #define BUZZER_GPIO_Port GPIOA
+#define MOTOR_DIR_Pin GPIO_PIN_6
+#define MOTOR_DIR_GPIO_Port GPIOA
+#define MOTOR_BRK_Pin GPIO_PIN_7
+#define MOTOR_BRK_GPIO_Port GPIOC
 #define TMS_Pin GPIO_PIN_13
 #define TMS_GPIO_Port GPIOA
 #define TCK_Pin GPIO_PIN_14

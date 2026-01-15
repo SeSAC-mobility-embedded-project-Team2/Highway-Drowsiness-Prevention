@@ -23,6 +23,7 @@
 /* USER CODE BEGIN Includes */
 #include "stm32f1xx_nucleo.h"
 #include "ServoMotor.h"
+#include "DC_Motor.h"
 #include "Max7219.h"
 #include "Buzzer.h"
 #include <stdio.h>
@@ -45,9 +46,11 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
-
 SPI_HandleTypeDef hspi1;
+
 TIM_HandleTypeDef htim2;
+TIM_HandleTypeDef htim3;
+
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
@@ -75,8 +78,11 @@ SystemStatus_t currentSystemStatus = STATUS_NORMAL;
 SystemStatus_t lastStatus = STATUS_NORMAL; // 증복 방지용
 SystemStatus_t lastStatusForDebug = STATUS_FAULT;
 
-// for ServoMotor
+// for Servo Motor
 extern TIM_HandleTypeDef htim2; // TIM2 핸들러 사용
+
+// for DC Motor
+extern TIM_HandleTypeDef htim3; // DC 모터용 TIM3
 
 //for UART
 uint8_t uart_rcvbuf;
@@ -91,6 +97,7 @@ static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_SPI1_Init(void);
+static void MX_TIM3_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -157,16 +164,16 @@ int main(void)
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
-  /* 주변장치 초기화 */
   MX_GPIO_Init();
   MX_USART2_UART_Init();
   MX_TIM2_Init();
   MX_SPI1_Init();
-
+  MX_TIM3_Init();
   /* USER CODE BEGIN 2 */
 
-  Max7219_Init();		// for MAX7219    초기화
-  Servo_Init(&htim2); 	// for ServoMotor 초기화
+  Max7219_Init();			// for MAX7219     초기화
+  Servo_Init(&htim2); 		// for Servo Motor 초기화
+  DC_Motor_Init(&htim3);	// for DC Motor    초기화
 
   HAL_UART_Receive_IT(&huart2, &uart_rcvbyte, 1);	// 최초 수신 시작
 
@@ -228,64 +235,36 @@ int main(void)
 			lastStatusForDebug = currentSystemStatus;
 	   }
 
+	  /*----------------------------- 패킷 수신 함수 추가 -------------------------------*/
 
 	  // --- 여기서부터 상태 플래그에 따라 모듈 제어 예정 ---
 
-	  /* [요구사항 명세서] 상태 플래그에 따른 모듈 제어 */
-	  /* 이전 상태와 다를 때만(신호가 새로 들어왔을 때만) 동작 실행 */
+
+	  /* 3. 상태 변화 트리거 (최초 1회성 동작들) */
 	  if (currentSystemStatus != lastStatus)
 	  {
-		  // 상태 변경 시 매트릭스 초기화 및 딜레이
-		  Max7219_All_Off();
-		  HAL_Delay(500);
-
-		  switch(currentSystemStatus)
-		  {
-			  case STATUS_NORMAL:
-				   Buzzer_Off();
-				   Servo_Update(STATUS_NORMAL);
-				   Max7219_All_Off();
-				   break;
-
-			  case STATUS_WARNING:
-					Buzzer_Update(STATUS_WARNING);
-					Servo_Update(STATUS_WARNING);
-					Max7219_ScrollText("WARNING", 3); // 3회 반복 출력
-					break;
-
-			  case STATUS_DANGER:
-					Buzzer_Update(STATUS_DANGER);
-					Servo_Update(STATUS_DANGER);
-					Max7219_ScrollText("DANGER  ", 3);	// 3회 반복 출력
-					break;
-
-			  case STATUS_FAULT:
-					Buzzer_Update(STATUS_WARNING);
-					Max7219_All_Off();
-					break;
-
-			  default:
-					break;
+		  // 상태가 바뀌는 순간에만 필요한 초기화 작업 수행
+		  // 주의: 여기서 긴 HAL_Delay를 사용하면 DC 모터의 감속이 멈춥니다.
+		  if (currentSystemStatus == STATUS_NORMAL) {
+			  Max7219_All_Off();
 		  }
-
-		  // 동작 완료 후 lastStatus 업데이트 (다음 신호 대기)
 		  lastStatus = currentSystemStatus;
 	  }
 
-
-	  /* 모듈별 업데이트 (비차단 방식) */
-	  // 주의: 아래 switch 문에서 Blocking 방식(HAL_Delay 사용)으로 동작할
-	  // 문구 출력 중에는 이 업데이트가 일시 정지될 수 있습니다.
+	  /* 4. 모듈별 실시간 업데이트 (비차단 방식) */
+	  // 이 함수들이 매 루프마다 호출되어야 감속/스크롤/부저음이 부드럽게 작동함
 	  Buzzer_Update((uint8_t)currentSystemStatus);
 	  Servo_Update((uint8_t)currentSystemStatus);
 
-	  /* [요구사항] 과부하 방지를 위한 미세 딜레이 */
-	  // 10ms 딜레이를 통해 CPU 발열 및 무한 루프 과부하를 방지합니다.
+	  // [핵심] DC 모터의 3초 선형 감속 프로세스가 이 함수 내부에서 HAL_GetTick으로 작동함
+	  DC_Motor_Update((uint8_t)currentSystemStatus);
+
+	  // 도트 매트릭스 출력 (스크롤 방식일 경우 비차단 Update 함수 사용 권장)
+	  // 만약 Max7219_ScrollText가 내부에서 딜레이를 쓴다면 감속에 영향을 줄 수 있음
+	  Max7219_Update((uint8_t)currentSystemStatus);
+
+	  /* 과부하 방지 딜레이 */
 	  HAL_Delay(10);
-
-	  /*----------------------------- 패킷 수신 함수 추가 -------------------------------*/
-
-
 
     /* USER CODE END WHILE */
 
@@ -307,7 +286,7 @@ void SystemClock_Config(void)
   * in the RCC_OscInitTypeDef structure.
   */
   RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
-  RCC_OscInitStruct.HSEState = RCC_HSE_BYPASS;
+  RCC_OscInitStruct.HSEState = RCC_HSE_ON;
   RCC_OscInitStruct.HSEPredivValue = RCC_HSE_PREDIV_DIV1;
   RCC_OscInitStruct.HSIState = RCC_HSI_ON;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
@@ -431,6 +410,65 @@ static void MX_TIM2_Init(void)
 }
 
 /**
+  * @brief TIM3 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM3_Init(void)
+{
+
+  /* USER CODE BEGIN TIM3_Init 0 */
+
+  /* USER CODE END TIM3_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+  TIM_OC_InitTypeDef sConfigOC = {0};
+
+  /* USER CODE BEGIN TIM3_Init 1 */
+
+  /* USER CODE END TIM3_Init 1 */
+  htim3.Instance = TIM3;
+  htim3.Init.Prescaler = 71;
+  htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim3.Init.Period = 999;
+  htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim3, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_TIM_PWM_Init(&htim3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim3, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigOC.OCMode = TIM_OCMODE_PWM1;
+  sConfigOC.Pulse = 0;
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  if (HAL_TIM_PWM_ConfigChannel(&htim3, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM3_Init 2 */
+
+  /* USER CODE END TIM3_Init 2 */
+  HAL_TIM_MspPostInit(&htim3);
+
+}
+
+/**
   * @brief USART2 Initialization Function
   * @param None
   * @retval None
@@ -482,17 +520,27 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(BUZZER_GPIO_Port, BUZZER_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOA, BUZZER_Pin|MOTOR_DIR_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(MOTOR_BRK_GPIO_Port, MOTOR_BRK_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(MAX7219_CS_GPIO_Port, MAX7219_CS_Pin, GPIO_PIN_SET);
 
-  /*Configure GPIO pin : BUZZER_Pin */
-  GPIO_InitStruct.Pin = BUZZER_Pin;
+  /*Configure GPIO pins : BUZZER_Pin MOTOR_DIR_Pin */
+  GPIO_InitStruct.Pin = BUZZER_Pin|MOTOR_DIR_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(BUZZER_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : MOTOR_BRK_Pin */
+  GPIO_InitStruct.Pin = MOTOR_BRK_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(MOTOR_BRK_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pin : MAX7219_CS_Pin */
   GPIO_InitStruct.Pin = MAX7219_CS_Pin;
