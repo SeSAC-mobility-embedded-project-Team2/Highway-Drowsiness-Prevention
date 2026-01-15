@@ -74,7 +74,7 @@ float    can_head_delta = 0.0f;
 // 2. UART(Vision) 수신용 변수
 uint8_t rx_byte; // 1바이트씩 검사할 임시 변수
 Vision_UART_Packet_t vision_rx_packet; // 최종 저장할 구조체
-
+uint8_t uart_rx_buffer[10]; // 수신 버퍼
 // 3. 데이터 저장소 (디버깅용)
 Chassis_Data_t chassis_info;
 Body_Data_t body_info;
@@ -156,7 +156,8 @@ int main(void)
     // === 2. UART(Vision) 수신 인터럽트 시작 ===
     // "Vision 패킷 크기만큼 데이터가 들어오면 알려줘!"
 //    HAL_UART_Receive_IT(&huart1, (uint8_t*)&vision_rx_packet, sizeof(Vision_UART_Packet_t));
-    HAL_UART_Receive_IT(&huart1, &rx_byte, 1);
+//    HAL_UART_Receive_IT(&huart1, &rx_byte, 1);
+    HAL_UART_Receive_IT(&huart1, uart_rx_buffer, 8);
     printf("Gateway System Started...\r\n"); // PC 터미널에서 보이면 성공!
     printf("Size of Struct: %d bytes\r\n", sizeof(Vision_UART_Packet_t));
   /* USER CODE END 2 */
@@ -402,23 +403,6 @@ static void MX_GPIO_Init(void)
 // 1. CAN 메시지가 도착하면 실행되는 함수
 void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
 {
-//  // 메시지 가져오기
-//  if (HAL_CAN_GetRxMessage(hcan, CAN_RX_FIFO0, &RxHeader, RxData) != HAL_OK)
-//  {
-//    return;
-//  }
-//
-//  // ID 별로 분류해서 저장
-//  if (RxHeader.StdId == 0x201) // Chassis ECU
-//  {
-//    memcpy(&chassis_info, RxData, sizeof(Chassis_Data_t));
-//  }
-//  else if (RxHeader.StdId == 0x301) // Body ECU
-//  {
-//    memcpy(&body_info, RxData, sizeof(Body_Data_t));
-//  }
-
-
     CAN_RxHeaderTypeDef RxHeader;
     uint8_t RxData[8];
 
@@ -447,39 +431,64 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
 
 }
 
-// 2. UART(Vision) 데이터가 도착하면 실행되는 함수
+// UART 수신 완료 콜백 (인터럽트)
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
-  static uint8_t rx_index = 0;
-  static uint8_t rx_buffer[10];
-
-  if (huart->Instance == USART1)
-  {
-
-    if (rx_index == 0)
+    // Vision 센서가 연결된 UART 채널인지 확인 (예: huart1)
+    if (huart->Instance == USART1)
     {
-      if (rx_byte == 0xFF)
-      {
-        rx_buffer[rx_index++] = rx_byte;
-      }
+        // ICD V0.1.1 파싱 (순서대로 매핑)
+        // [Byte 0] PERCLOS
+        vision_rx_packet.perclos = uart_rx_buffer[0];
+
+        // [Byte 1] Eye_State (Bit 0), Face_Detect (Bit 1)
+        uint8_t flags = uart_rx_buffer[1];
+        vision_rx_packet.eye_state = (flags & 0x01);       // 0번 비트
+        vision_rx_packet.face_flag = (flags >> 1) & 0x01; // 1번 비트
+
+        // [Byte 7] Alive Count (하위 4비트), Err Flag (상위 4비트)
+        uint8_t status = uart_rx_buffer[7];
+        vision_rx_packet.alive_cnt = status & 0x0F;
+        vision_rx_packet.err_flag = (status >> 4) & 0x0F;
+
+        // 다음 데이터 수신 대기 (필수!)
+        HAL_UART_Receive_IT(&huart1, uart_rx_buffer, 8); // 8바이트씩 수신
     }
-    else
-    {
-      rx_buffer[rx_index++] = rx_byte;
-
-
-      if (rx_index >= 10)
-      {
-    	memcpy(&vision_rx_packet, rx_buffer, 10);
-        rx_index = 0; // 초기화
-      }
-    }
-
-    // 다음 바이트 수신 대기
-//    HAL_UART_Receive_IT(&huart1, (uint8_t*)&vision_rx_packet, sizeof(Vision_UART_Packet_t));
-    HAL_UART_Receive_IT(&huart1, (uint8_t*)&rx_byte, 1);
-  }
 }
+
+//// 2. UART(Vision) 데이터가 도착하면 실행되는 함수
+//void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+//{
+//  static uint8_t rx_index = 0;
+//  static uint8_t rx_buffer[10];
+//
+//  if (huart->Instance == USART1)
+//  {
+//
+//    if (rx_index == 0)
+//    {
+//      if (rx_byte == 0xFF)
+//      {
+//        rx_buffer[rx_index++] = rx_byte;
+//      }
+//    }
+//    else
+//    {
+//      rx_buffer[rx_index++] = rx_byte;
+//
+//
+//      if (rx_index >= 10)
+//      {
+//    	memcpy(&vision_rx_packet, rx_buffer, 10);
+//        rx_index = 0; // 초기화
+//      }
+//    }
+//
+//    // 다음 바이트 수신 대기
+////    HAL_UART_Receive_IT(&huart1, (uint8_t*)&vision_rx_packet, sizeof(Vision_UART_Packet_t));
+//    HAL_UART_Receive_IT(&huart1, (uint8_t*)&rx_byte, 1);
+//  }
+//}
 
 // ==========================================
 // [Fuzzy Logic Engine Final]
