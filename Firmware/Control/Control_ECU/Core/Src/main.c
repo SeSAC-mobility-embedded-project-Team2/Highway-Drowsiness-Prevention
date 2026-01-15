@@ -47,7 +47,6 @@
 
 /* Private variables ---------------------------------------------------------*/
 SPI_HandleTypeDef hspi1;
-
 TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
 
@@ -112,8 +111,8 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 	if(huart->Instance == USART2)
 	{
 		// 1. 헤더 찾기 (패킷의 시작)
-		// 시작 신호를 통일 해야함 (0xAA)
-		if(rxIndex == 0 && uart_rcvbyte == 0xAA) {
+		// 시작 신호를 통일 해야함 (0x401)
+		if(rxIndex == 0 && uart_rcvbyte == 0x401) {
 			rxPacket[rxIndex++] = uart_rcvbyte;
 		}
 		// 2. 나머지 데이터 채우기
