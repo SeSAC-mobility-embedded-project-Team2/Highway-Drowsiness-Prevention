@@ -64,7 +64,7 @@ typedef enum {
 } SystemStatus_t;
 
 // UART 패킷 수신용
-uint8_t rxPacket[4];				// [Header, Alert_Level, MRM_Trigger, Checksum]
+uint8_t rxPacket[8];				// [Header, Alert_Level, MRM_Trigger, Checksum]
 uint8_t rxIndex = 0;				// 수신 바이트 위치 카운트
 uint8_t uart_rcvbyte;				// 1바이트 임시 수신용
 volatile uint8_t bPacketReady = 0;	// 패킷 완성 플래그
@@ -112,15 +112,14 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 	{
 		// 1. 헤더 찾기 (패킷의 시작)
 		// 시작 신호를 통일 해야함 (0x401)
-		if(rxIndex == 0 && uart_rcvbyte == 0x401) {
-			rxPacket[rxIndex++] = uart_rcvbyte;
-		}
+//		if(rxIndex == 0 && uart_rcvbyte == 0x401) {
+
 		// 2. 나머지 데이터 채우기
-		else if(rxIndex > 0) {
+		if(rxIndex >= 0) {
 			rxPacket[rxIndex++] = uart_rcvbyte;
 
 			// 3. 4바이트 패킷이 완성되었는가?
-			if(rxIndex >= 4) {
+			if(rxIndex >= 8) {
 				bPacketReady = 1;	// 패킷 완성
 				rxIndex = 0; 		// 다음 패킷을 위해 인덱스 초기화
 			}
@@ -193,13 +192,13 @@ int main(void)
 	  {
 		  bPacketReady = 0;
 
-		  uint8_t alertLevel = rxPacket[1]; // ICD : Byte 0 (Aleret_Level)
-		  uint8_t mrmTrigger = rxPacket[2];	// ICD : Byte 1 (MRM_Trigger)
-		  uint8_t checksum 	 = rxPacket[3];
+		  uint8_t alertLevel = rxPacket[0]; // ICD : Byte 0 (Aleret_Level)
+		  uint8_t mrmTrigger = rxPacket[1];	// ICD : Byte 1 (MRM_Trigger)
+//		  uint8_t checksum 	 = rxPacket[7];
 
 		  // 데이터 무결성 검사 (Header 제외 간단한 합산)
-		  if(checksum == (uint8_t)(alertLevel + mrmTrigger))
-		  {
+//		  if(checksum == (uint8_t)(alertLevel + mrmTrigger))
+//		  {
 			  // 위험 상태 판단 로직
 			  if(alertLevel == 2 || mrmTrigger == 1)
 			  {
@@ -222,7 +221,7 @@ int main(void)
 			  char msg[30];
 			  sprintf(msg, "Status Updated: %d\r\n", currentSystemStatus);
 			  HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 10);
-		  }
+//		  }
 	  }
 
 
