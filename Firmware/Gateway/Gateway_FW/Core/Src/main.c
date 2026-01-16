@@ -482,8 +482,29 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
 
 void Update_System_State()
 {
+	// 1. 데이터 스냅샷(Snapshot)을 위한 로컬 변수 선언
+	VisionData_t  vision_data_local;
+	ChassisData_t chassis_data_local;
+	BodyData_t    body_data_local;
+
+	// 2. 크리티컬 섹션 (Critical Section): 인터럽트 잠시 중단
+	__disable_irq();
+
+    // 3. 전역 변수 값을 로컬 변수로 안전하게 복사
+	vision_data_local  = vision_data;
+	chassis_data_local = chassis_data;
+	body_data_local = body_data;
+
+    // 4. 인터럽트 다시 허용
+    __enable_irq();
+
+    // -----------------------------------------------------------
+    // 이제부터는 전역변수 대신 로컬 변수(_local)만 사용합니다.
+    // -----------------------------------------------------------
+
+
     // 비전, 섀시, 바디에서 에러 플래그가 하나라도 0이 아니면 고장 처리
-    if (vision_data.err_flag != 0 || chassis_data.err_flag != 0 || body_data.err_flag != 0)
+    if (vision_data_local.err_flag != 0 || chassis_data_local.err_flag != 0 || body_data_local.err_flag != 0)
     {
         printf("🔧 SENSOR ERROR DETECTED! (Fail-Safe Mode)\r\n");
 
@@ -494,7 +515,7 @@ void Update_System_State()
         return;
     }
 
-    float current_angle = chassis_data.steering_angle;
+    float current_angle = chassis_data_local.steering_angle;
     // 변화량 계산 (ABS 매크로 사용)
     float angle_diff = (int32_t)current_angle - prev_steering_angle;
 
@@ -514,9 +535,9 @@ void Update_System_State()
     // 얼굴 인식 여부에 따른 데이터 필터링
     uint8_t safe_perclos = 0;
 
-    if (vision_data.is_face_detected == 1)
+    if (vision_data_local.is_face_detected == 1)
     {
-        safe_perclos = vision_data.perclos; // 얼굴 있으면 측정값 사용
+        safe_perclos = vision_data_local.perclos; // 얼굴 있으면 측정값 사용
     }
     else
     {
@@ -528,9 +549,9 @@ void Update_System_State()
 
     uint8_t risk_score = Compute_Integrated_Risk(
                             safe_perclos,
-                            chassis_data.steering_std_dev,
-                            body_data.hands_off_sec,
-                            body_data.head_delta_cm,
+                            chassis_data_local.steering_std_dev,
+                            body_data_local.hands_off_sec,
+                            body_data_local.head_delta_cm,
 							no_op_sec
                          );
 
@@ -569,7 +590,7 @@ void Update_System_State()
 
     // 2. 에러 플래그 판단 (예: Vision 데이터가 너무 안 들어올 때)
     uint8_t sys_err = 0;
-    if (vision_data.err_flag != 0) // Vision 센서 에러 시
+    if (vision_data_local.err_flag != 0) // Vision 센서 에러 시
     {
         sys_err = 1; // LogicFail (또는 ICD에 맞는 에러코드)
     }
@@ -581,10 +602,10 @@ void Update_System_State()
 //        printf("Risk: %d | Eye_safe : %d%% | detected : %d | Hands: %.1fs | Head: %.1f | Steer: %.1f | NoOp: %.1fs\r\n",
 //                risk_score,
 //				safe_perclos,
-//				vision_data.is_face_detected,
-//                body_data.hands_off_sec,
-//                body_data.head_delta_cm,
-//                chassis_data.steering_std_dev,
+//				vision_data_local.is_face_detected,
+//                body_data_local.hands_off_sec,
+//                body_data_local.head_delta_cm,
+//                chassis_data_local.steering_std_dev,
 //                no_op_sec
 //                );
 }
