@@ -27,7 +27,7 @@ typedef struct {
 // Chassis (조향) 데이터
 typedef struct {
     float    steering_std_dev; // 조향 표준편차
-    int16_t  steering_angle;   // 현재 조향각
+    float  steering_angle;   // 현재 조향각
     uint8_t  alive_cnt;
     uint8_t  err_flag;
 } ChassisData_t;
@@ -45,7 +45,7 @@ typedef struct {
 // 3.
 // ==========================================
 extern SystemState_t current_state;
-extern int16_t prev_steering_angle;
+extern float prev_steering_angle;
 extern uint32_t no_op_timer;
 
 extern CAN_RxHeaderTypeDef RxHeader;

@@ -40,7 +40,7 @@ void DMS_Process_CAN_Data(CAN_RxHeaderTypeDef *header, uint8_t *data)
 
         // Byte 2-3: Steering Angle (Factor 0.1, int16)
         int16_t raw_angle = (data[3] << 8) | data[2];
-        chassis_data.steering_angle = raw_angle; // (주의: Factor 적용 전 Raw 값 저장 or float 변환 선택)
+        chassis_data.steering_angle = raw_angle * 0.1f; // (주의: Factor 적용 전 Raw 값 저장 or float 변환 선택)
 
         // Alive & Err
         chassis_data.alive_cnt = data[7] & 0x0F;

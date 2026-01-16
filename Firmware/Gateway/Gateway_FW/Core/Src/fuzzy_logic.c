@@ -22,7 +22,7 @@ uint8_t Compute_Integrated_Risk(uint8_t perclos, float steer_std, float hands_of
     float risk_steer = Fuzzy_Trapezoid(steer_std, 20.0f, 40.0f);
     float risk_hands = Fuzzy_Trapezoid(hands_off_sec, 2.0f, 5.0f);
     float risk_head  = Fuzzy_Trapezoid(ABS(head_delta), 10.0f, 25.0f);
-    float risk_noop  = Fuzzy_Trapezoid(no_op_sec, 10.0f, 20.0f) * 0.6f; // 최대 60점(Warning) 제한
+    float risk_noop  = Fuzzy_Trapezoid(no_op_sec, 10.0f, 20.0f) * 0.8f; // 최대 60점(Warning) 제한
 
     // [Step 2] Rule Evaluation (눈부심 방지)
     // 눈만 위험하고(>0.8), 나머지는 아주 멀쩡하면(<0.2) -> 눈부심(Glare)으로 간주

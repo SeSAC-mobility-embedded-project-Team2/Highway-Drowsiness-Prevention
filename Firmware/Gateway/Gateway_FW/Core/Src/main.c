@@ -58,7 +58,7 @@ uint32_t last_execution_time = 0;
 volatile uint8_t timer_100ms_flag = 0;
 // === 전역 변수 실제 생성 (메모리 할당) ===
 SystemState_t current_state = STATE_NORMAL;
-int16_t prev_steering_angle = 0;
+float prev_steering_angle = 0;
 uint32_t no_op_timer = 0;
 
 CAN_RxHeaderTypeDef RxHeader;
@@ -494,14 +494,14 @@ void Update_System_State()
         return;
     }
 
-    int16_t current_angle = chassis_data.steering_angle;
+    float current_angle = chassis_data.steering_angle;
     // 변화량 계산 (ABS 매크로 사용)
-    int32_t angle_diff = (int32_t)current_angle - prev_steering_angle;
+    float angle_diff = (int32_t)current_angle - prev_steering_angle;
 
     if (angle_diff < 0) angle_diff = -angle_diff;
 
-    // 변화량이 2.0도(값 20) 미만이면 무조작으로 간주
-    if (angle_diff < 20)
+    // 변화량이 2.0도 미만이면 무조작으로 간주
+    if (angle_diff < 2.0f)
     {
         no_op_timer += 100; // 100ms 증가 (루프 주기)
     }
