@@ -129,6 +129,8 @@ int main(void)
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
   CAN_Config_Filter();						  // CAN 시작 및 필터 설정
+  CAN_Test_Config_Filter(&hcan);
+  HAL_CAN_Start(&hcan);
   HAL_TIM_IC_Start_IT(&htim3, TIM_CHANNEL_1); // 초음파 캡처 시작
   HAL_TIM_Base_Start_IT(&htim6);			  // 0.1초 전송용 TIM6 시작
 
@@ -166,6 +168,8 @@ int main(void)
 
 	// 2. C02 값 읽기 및 필터 업데이트
 	CO2_Update();
+
+	CAN_Test_Receive_Check(&hcan);
 
 	// 3. 센서 안정화 및 간섭 방지를 위한 대기
 	HAL_Delay(100);
@@ -509,15 +513,17 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
     if (htim->Instance == TIM6) {
         // 1. 센서 값 읽기
         int8_t delta = Ultrasonic_Get_Head_Delta();
-        uint8_t touch = Touch_Get_Status();
+        uint8_t touch = 1;
+        hands_off_counter = 0;
+//        uint8_t touch = Touch_Get_Status();
         uint8_t raw_dist = (uint8_t)Ultrasonic_Get_Distance();
 
         // 2. Hands_Off_Time 계산 (0.1초 단위)
-        if (touch == 0) { // 손을 떼고 있다면
-            if (hands_off_counter < 255) hands_off_counter++; // 0.1초 누적
-        } else {
-            hands_off_counter = 0; // 손을 잡으면 즉시 리셋
-        }
+//        if (touch == 0) { // 손을 떼고 있다면
+//            if (hands_off_counter < 255) hands_off_counter++; // 0.1초 누적
+//        } else {
+//            hands_off_counter = 0; // 손을 잡으면 즉시 리셋
+//        }
 
         // 3. 변경된 명세로 CAN 전송
         CAN_Tx_SensorData(delta, hands_off_counter, raw_dist, touch);
