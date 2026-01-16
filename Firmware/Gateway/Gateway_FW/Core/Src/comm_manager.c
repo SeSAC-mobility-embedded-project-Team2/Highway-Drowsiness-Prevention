@@ -57,6 +57,11 @@ void DMS_Process_CAN_Data(CAN_RxHeaderTypeDef *header, uint8_t *data)
         // Byte 1: Hands Off Time (uint8, Factor 0.1)
         uint8_t raw_time = data[1];
         body_data.hands_off_sec = raw_time * 0.1f;
+
+        // Byte 7 : alive counter and error flag (uint8)
+        body_data.alive_cnt = data[7] & 0x0F;
+        body_data.err_flag  = (data[7] >> 4) & 0x0F;
+
     }
 }
 

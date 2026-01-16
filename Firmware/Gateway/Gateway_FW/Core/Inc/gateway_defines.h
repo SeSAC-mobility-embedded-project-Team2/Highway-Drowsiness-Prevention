@@ -37,6 +37,8 @@ typedef struct {
     float head_delta_cm;   // 머리 위치 변화량
     float hands_off_sec;   // 손 뗀 시간
     float no_op_sec;       // 무조작 시간
+    uint8_t  alive_cnt : 4;// 하위 4비트: 롤링 카운터
+    uint8_t  err_flag  : 4;// 상위 4비트: 0=OK, 1=SonarFail, 2=TouchFail
 } BodyData_t;
 
 // ==========================================

@@ -69,7 +69,7 @@ void test_Comm_Packet_Generation(void) {
     // 1. 가상의 상황 설정
     uint8_t current_state = 2; // Danger
     uint8_t mrm_cmd = 1;       // MRM Active
-    uint8_t sys_err = 0;
+//    uint8_t sys_err = 0;
 
     // 2. 패킷 버퍼 준비 (comm_manager 내부 로직을 흉내내거나, 패킷 생성 함수를 분리했다면 호출)
     // 여기서는 사용자가 올린 코드 흐름 상 결과물을 검증하는 방식을 사용
