@@ -50,6 +50,7 @@ TIM_HandleTypeDef htim3;
 
 UART_HandleTypeDef huart1;
 UART_HandleTypeDef huart2;
+UART_HandleTypeDef huart3;
 
 /* USER CODE BEGIN PV */
 uint32_t last_execution_time = 0;
@@ -77,6 +78,7 @@ static void MX_CAN_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_TIM3_Init(void);
+static void MX_USART3_UART_Init(void);
 /* USER CODE BEGIN PFP */
 void Update_System_State();
 /* USER CODE END PFP */
@@ -119,6 +121,7 @@ int main(void)
   MX_USART1_UART_Init();
   MX_USART2_UART_Init();
   MX_TIM3_Init();
+  MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
 
   // === 1. CAN 필터 및 시작 설정  ===
@@ -351,6 +354,39 @@ static void MX_USART2_UART_Init(void)
 }
 
 /**
+  * @brief USART3 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USART3_UART_Init(void)
+{
+
+  /* USER CODE BEGIN USART3_Init 0 */
+
+  /* USER CODE END USART3_Init 0 */
+
+  /* USER CODE BEGIN USART3_Init 1 */
+
+  /* USER CODE END USART3_Init 1 */
+  huart3.Instance = USART3;
+  huart3.Init.BaudRate = 115200;
+  huart3.Init.WordLength = UART_WORDLENGTH_8B;
+  huart3.Init.StopBits = UART_STOPBITS_1;
+  huart3.Init.Parity = UART_PARITY_NONE;
+  huart3.Init.Mode = UART_MODE_TX_RX;
+  huart3.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart3.Init.OverSampling = UART_OVERSAMPLING_16;
+  if (HAL_UART_Init(&huart3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART3_Init 2 */
+
+  /* USER CODE END USART3_Init 2 */
+
+}
+
+/**
   * @brief GPIO Initialization Function
   * @param None
   * @retval None
@@ -400,7 +436,7 @@ static void MX_GPIO_Init(void)
 int _write(int file, char *ptr, int len)
 {
     // 디버깅용 UART 채널.
-    HAL_UART_Transmit(&huart2, (uint8_t *)ptr, len, 10);
+    HAL_UART_Transmit(&huart2, (uint8_t *)ptr, len, 20);
     return len;
 }
 #endif
@@ -441,6 +477,7 @@ void Update_System_State()
         printf("🔧 SENSOR ERROR DETECTED! (Fail-Safe Mode)\r\n");
         return;
     }
+
     int16_t current_angle = chassis_data.steering_angle;
 
     // 변화량 계산 (ABS 매크로 사용)
@@ -458,11 +495,23 @@ void Update_System_State()
         prev_steering_angle = current_angle; // 기준점 갱신
     }
 
+    // 얼굴 인식 여부에 따른 데이터 필터링
+    uint8_t safe_perclos = 0;
+
+    if (vision_data.is_face_detected == 1)
+    {
+        safe_perclos = vision_data.perclos; // 얼굴 있으면 측정값 사용
+    }
+    else
+    {
+        safe_perclos = 0; // 얼굴 없으면 0점 (위험도 계산에서 제외됨)
+    }
+
     // ms -> sec 변환
     float no_op_sec = no_op_timer / 1000.0f;
 
     uint8_t risk_score = Compute_Integrated_Risk(
-                            vision_data.perclos,
+                            safe_perclos,
                             chassis_data.steering_std_dev,
                             body_data.hands_off_sec,
                             body_data.head_delta_cm,
@@ -471,7 +520,7 @@ void Update_System_State()
 
     if (current_state == STATE_NORMAL)
     {
-    	if (risk_score >= 80)
+    	if (risk_score >= 60)
     	{
     		current_state = STATE_WARNING;
     	}
@@ -510,11 +559,13 @@ void Update_System_State()
     }
 
     // 3. 제어 신호 전송 (ICD V0.1.2 규격)
-    DMS_Send_Control_Signal(&huart2, current_state, mrm_cmd, sys_err);
+    DMS_Send_Control_Signal(&huart3, current_state, mrm_cmd, sys_err);
+
     // 수정된 printf (무조작 시간 확인용)
-        printf("Risk: %d | Eye: %d%% | Hands: %.1fs | Head: %.1f | Steer: %.1f | NoOp: %.1fs\r\n",
+        printf("Risk: %d | Eye_safe : %d%% | detected : %d | Hands: %.1fs | Head: %.1f | Steer: %.1f | NoOp: %.1fs\r\n",
                 risk_score,
-                vision_data.perclos,
+				safe_perclos,
+				vision_data.is_face_detected,
                 body_data.hands_off_sec,
                 body_data.head_delta_cm,
                 chassis_data.steering_std_dev,

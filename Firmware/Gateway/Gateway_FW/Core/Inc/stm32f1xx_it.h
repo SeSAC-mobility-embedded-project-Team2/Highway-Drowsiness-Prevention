@@ -61,6 +61,7 @@ void CAN1_RX1_IRQHandler(void);
 void CAN1_SCE_IRQHandler(void);
 void TIM3_IRQHandler(void);
 void USART1_IRQHandler(void);
+void USART3_IRQHandler(void);
 void EXTI15_10_IRQHandler(void);
 /* USER CODE BEGIN EFP */
 

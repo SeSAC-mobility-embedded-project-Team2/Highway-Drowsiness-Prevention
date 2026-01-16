@@ -64,46 +64,44 @@ static uint8_t gateway_alive_cnt = 0;
 
 void DMS_Send_Control_Signal(UART_HandleTypeDef *huart, SystemState_t state, uint8_t mrm_active, uint8_t err_flag)
 {
-    // ICD V0.1.2에 따른 8바이트 패킷 생성
-    uint8_t tx_buffer[8] = {0,}; // 0으로 초기화 (Reserved 영역 자동 0 처리)
+    // [구조 변경] Header(2) + Payload(8) = 총 10바이트
+    uint8_t tx_packet[10] = {0,};
 
     // --------------------------------------------------------
-    // [Byte 0] Alert_Level (Bit 0~7)
+    // [Header] ID: 0x401 (16bit) -> Split into 2 Bytes
+    // --------------------------------------------------------
+    tx_packet[0] = 0x04; // High Byte
+    tx_packet[1] = 0x01; // Low Byte (0x0401)
+
+    // --------------------------------------------------------
+    // [Payload Byte 0] Alert_Level (Bit 0~7) -> tx_packet[2]
     // --------------------------------------------------------
     // 0:Normal, 1:Warning, 2:Danger, 3:Fault
-    tx_buffer[0] = (uint8_t)state;
+    tx_packet[2] = (uint8_t)state;
 
     // --------------------------------------------------------
-    // [Byte 1] MRM_Trigger (Bit 0)
+    // [Payload Byte 1] MRM_Trigger (Bit 0) -> tx_packet[3]
     // --------------------------------------------------------
-    // 1: Active, 0: Inactive
     if (mrm_active)
     {
-        tx_buffer[1] |= 0x01; // 첫 번째 비트 1 설정
+        tx_packet[3] |= 0x01;
     }
 
-    // --------------------------------------------------------
-    // [Byte 2 ~ 6] Reserved
-    // --------------------------------------------------------
-    // 초기화 시 이미 0이므로 패스
+    // [Payload Byte 2~6] Reserved (tx_packet[4] ~ tx_packet[8])
+    // 0으로 초기화됨
 
     // --------------------------------------------------------
-    // [Byte 7] Gateway_Alive_Cnt (Bit 0~3) + Gateway_Err_Flag (Bit 4~7)
+    // [Payload Byte 7] Alive & Err -> tx_packet[9]
     // --------------------------------------------------------
+    tx_packet[9] |= (gateway_alive_cnt & 0x0F);       // Alive Count
+    tx_packet[9] |= ((err_flag & 0x0F) << 4);         // Error Flag
 
-    // 1. Alive Count (하위 4비트)
-    tx_buffer[7] |= (gateway_alive_cnt & 0x0F);
-
-    // 2. Error Flag (상위 4비트)
-    tx_buffer[7] |= ((err_flag & 0x0F) << 4);
-
-    // 3. 카운터 증가 (0~15 롤링)
-    gateway_alive_cnt++;
-    if (gateway_alive_cnt > 15) gateway_alive_cnt = 0;
+    // Alive Count 증가
+    gateway_alive_cnt = (gateway_alive_cnt + 1) % 16;
 
     // --------------------------------------------------------
-    // [전송] UART Transmit (8 Bytes)
+    // [전송] UART Transmit (총 10 Bytes)
     // --------------------------------------------------------
-    // 참고: UART 수신 측에서 Header 없이 Raw Data 8바이트를 읽는 방식이라면 이대로 전송
-    HAL_UART_Transmit(huart, tx_buffer, 8, 10);
+    // main.c에서 넘겨준 huart 핸들러(UART3)로 전송
+    HAL_UART_Transmit(huart, tx_packet, 10, 10);
 }
