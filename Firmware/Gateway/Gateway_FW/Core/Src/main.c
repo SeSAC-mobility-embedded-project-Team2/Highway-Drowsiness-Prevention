@@ -94,7 +94,7 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
-
+	printf("system start...\r\n");
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -141,6 +141,8 @@ int main(void)
     // === 2. UART(Vision) 수신 인터럽트 시작 ===
     HAL_UART_Receive_IT(&huart1, uart_rx_buffer, 8);
 
+    // === 3. Timer3 인터럽트 시작 ===
+    HAL_TIM_Base_Start_IT(&htim3);
   /* USER CODE END 2 */
 
   /* Infinite loop */
