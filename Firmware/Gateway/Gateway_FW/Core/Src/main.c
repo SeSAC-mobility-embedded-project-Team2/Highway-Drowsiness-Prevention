@@ -482,7 +482,7 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
 
 void Update_System_State()
 {
-    // 비전이나 섀시 쪽에서 에러 플래그가 하나라도 0이 아니면 고장 처리
+    // 비전, 섀시, 바디에서 에러 플래그가 하나라도 0이 아니면 고장 처리
     if (vision_data.err_flag != 0 || chassis_data.err_flag != 0 || body_data.err_flag != 0)
     {
         printf("🔧 SENSOR ERROR DETECTED! (Fail-Safe Mode)\r\n");
@@ -495,9 +495,9 @@ void Update_System_State()
     }
 
     int16_t current_angle = chassis_data.steering_angle;
-
     // 변화량 계산 (ABS 매크로 사용)
-    int16_t angle_diff = current_angle - prev_steering_angle;
+    int32_t angle_diff = (int32_t)current_angle - prev_steering_angle;
+
     if (angle_diff < 0) angle_diff = -angle_diff;
 
     // 변화량이 2.0도(값 20) 미만이면 무조작으로 간주
