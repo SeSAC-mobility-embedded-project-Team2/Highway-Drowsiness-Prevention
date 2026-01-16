@@ -26,6 +26,7 @@
 #include <fuzzy_logic.h>
 #include <comm_manager.h>
 #include <stdio.h>
+#include "unity.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -81,6 +82,7 @@ static void MX_TIM3_Init(void);
 static void MX_USART3_UART_Init(void);
 /* USER CODE BEGIN PFP */
 void Update_System_State();
+extern void Run_ASPICE_Unit_Tests(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -123,7 +125,16 @@ int main(void)
   MX_TIM3_Init();
   MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
+    printf("\r\n=======================================================\r\n");
+    printf("   ASPICE SWE.4 Unit Verification Report               \r\n");
+    printf("-------------------------------------------------------\r\n");
+    printf("   Target Project : Drowsiness Prevention System       \r\n");
+    printf("   SW Version     : V0.8                               \r\n");
+    printf("   Test Date      : 2026-01-16 (Manual Run)            \r\n");
+    printf("=======================================================\r\n\r\n");
 
+    Run_ASPICE_Unit_Tests();
+    printf("============================================\r\n");
   // === 1. CAN 필터 및 시작 설정  ===
     CAN_FilterTypeDef sFilterConfig;
     sFilterConfig.FilterBank = 0;
@@ -436,7 +447,7 @@ static void MX_GPIO_Init(void)
 int _write(int file, char *ptr, int len)
 {
     // 디버깅용 UART 채널.
-    HAL_UART_Transmit(&huart2, (uint8_t *)ptr, len, 20);
+    HAL_UART_Transmit(&huart2, (uint8_t *)ptr, len, 30);
     return len;
 }
 #endif
@@ -520,7 +531,7 @@ void Update_System_State()
 
     if (current_state == STATE_NORMAL)
     {
-    	if (risk_score >= 60)
+    	if (risk_score >= 75)
     	{
     		current_state = STATE_WARNING;
     	}
@@ -562,15 +573,15 @@ void Update_System_State()
     DMS_Send_Control_Signal(&huart3, current_state, mrm_cmd, sys_err);
 
     // 수정된 printf (무조작 시간 확인용)
-        printf("Risk: %d | Eye_safe : %d%% | detected : %d | Hands: %.1fs | Head: %.1f | Steer: %.1f | NoOp: %.1fs\r\n",
-                risk_score,
-				safe_perclos,
-				vision_data.is_face_detected,
-                body_data.hands_off_sec,
-                body_data.head_delta_cm,
-                chassis_data.steering_std_dev,
-                no_op_sec
-                );
+//        printf("Risk: %d | Eye_safe : %d%% | detected : %d | Hands: %.1fs | Head: %.1f | Steer: %.1f | NoOp: %.1fs\r\n",
+//                risk_score,
+//				safe_perclos,
+//				vision_data.is_face_detected,
+//                body_data.hands_off_sec,
+//                body_data.head_delta_cm,
+//                chassis_data.steering_std_dev,
+//                no_op_sec
+//                );
 }
 
 /* USER CODE END 4 */

@@ -21,7 +21,7 @@ uint8_t Compute_Integrated_Risk(uint8_t perclos, float steer_std, float hands_of
     float risk_eye   = Fuzzy_Trapezoid((float)perclos, 40.0f, 60.0f);
     float risk_steer = Fuzzy_Trapezoid(steer_std, 20.0f, 40.0f);
     float risk_hands = Fuzzy_Trapezoid(hands_off_sec, 2.0f, 5.0f);
-    float risk_head  = Fuzzy_Trapezoid(ABS(head_delta), 5.0f, 15.0f);
+    float risk_head  = Fuzzy_Trapezoid(ABS(head_delta), 10.0f, 25.0f);
     float risk_noop  = Fuzzy_Trapezoid(no_op_sec, 10.0f, 20.0f) * 0.6f; // 최대 60점(Warning) 제한
 
     // [Step 2] Rule Evaluation (눈부심 방지)
