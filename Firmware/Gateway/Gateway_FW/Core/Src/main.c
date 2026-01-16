@@ -27,6 +27,9 @@
 #include <comm_manager.h>
 #include <stdio.h>
 #include "unity.h"
+
+// [테스트 스위치] 이 줄이 있으면 테스트 모드, 주석(//) 처리하면 정상 모드
+#define CPU_TEST_MODE
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -54,8 +57,15 @@ UART_HandleTypeDef huart2;
 UART_HandleTypeDef huart3;
 
 /* USER CODE BEGIN PV */
-uint32_t last_execution_time = 0;
+
+#ifdef CPU_TEST_MODE
+  volatile uint32_t idle_counter = 0;
+  uint32_t max_idle_count = 0;
+  uint8_t  benchmark_done = 0; // 기준점 측정 완료 플래그
+#endif
+
 volatile uint8_t timer_100ms_flag = 0;
+
 // === 전역 변수 실제 생성 (메모리 할당) ===
 SystemState_t current_state = STATE_NORMAL;
 float prev_steering_angle = 0;
@@ -135,6 +145,7 @@ int main(void)
 
     Run_ASPICE_Unit_Tests();
     printf("============================================\r\n");
+
   // === 1. CAN 필터 및 시작 설정  ===
     CAN_FilterTypeDef sFilterConfig;
     sFilterConfig.FilterBank = 0;
@@ -157,12 +168,23 @@ int main(void)
 
     // === 3. Timer3 인터럽트 시작 ===
     HAL_TIM_Base_Start_IT(&htim3);
+
+	#ifdef CPU_TEST_MODE
+	  printf("⚠️ TEST MODE: CPU Load Test Started (Loopback)\r\n");
+	#else
+	  printf("system start...\r\n");
+	#endif
+
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+#ifdef CPU_TEST_MODE
+		  idle_counter++; // 테스트 모드일 때만 카운팅
+#endif
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -171,6 +193,62 @@ int main(void)
 		  timer_100ms_flag = 0;
 
 		  Update_System_State();
+
+#ifdef CPU_TEST_MODE
+        static int time_100ms = 0;
+        time_100ms++;
+
+        // 1. [초반 3초] 아무것도 안 하고 기준점(Max Idle) 잡기
+        if (time_100ms <= 30)
+        {
+            if (time_100ms == 30) // 3초 되는 순간 기준점 확정
+            {
+                 // 지금까지 3초간 센 것을 100ms 단위 평균으로 환산하거나,
+                 // 간단히 지금 순간의 카운터 속도를 기준으로 잡음 (여기선 간단화된 로직 사용)
+                 // *정확한 방법*: 1초 단위로 끊어서 측정. 아래 로직으로 변경.
+            	benchmark_done = 1; // 기준점 확정 플래그
+            	printf("\r\n>>> Calibration Done! Starting Stress Test (500 msg/100ms) <<<\r\n");
+            }
+        }
+        // 2. [3초 이후] CAN 폭격 시작 (부하 유발)
+        else
+        {
+            CAN_TxHeaderTypeDef TxHeader;
+            uint8_t TxData[8] = {0,};
+            uint32_t TxMailbox;
+
+            TxHeader.StdId = 0x123; // 쓰레기 ID (필터에 걸려야 함)
+            TxHeader.RTR = CAN_RTR_DATA;
+            TxHeader.IDE = CAN_ID_STD;
+            TxHeader.DLC = 8;
+
+            // [수정] 부하를 10배로 늘림 (50 -> 500회)
+            // 0.1초 안에 500번 인터럽트면 CPU가 꽤 힘들어할 겁니다.
+            for(int i=0; i<5000; i++) {
+                HAL_CAN_AddTxMessage(&hcan, &TxHeader, TxData, &TxMailbox);
+            }
+        }
+
+        // 3. 결과 출력 (1초 마다)
+        if (time_100ms % 10 == 0)
+        {
+            // 아직 기준점 못 잡았으면 현재 값을 최대로 가정
+            if (benchmark_done == 0) {
+                max_idle_count = idle_counter;
+                // 3초 지났으면 이제부터 이 값은 고정 (기준점 확정)
+                if (time_100ms >= 30) benchmark_done = 1;
+                printf("[CALIB] Measuring Baseline... Cnt: %lu\r\n", idle_counter);
+            }
+            else {
+                // 기준점(max_idle_count) 대비 현재 카운트가 얼마나 줄었는지 계산
+                float load = (1.0f - (float)idle_counter / max_idle_count) * 100.0f;
+                if(load < 0) load = 0;
+                printf("[TEST] Load: %.1f%% | Cnt: %lu (Base: %lu)\r\n", load, idle_counter, max_idle_count);
+            }
+
+            idle_counter = 0; // 리셋
+        }
+#endif
 	  }
 
   }
@@ -233,7 +311,13 @@ static void MX_CAN_Init(void)
   /* USER CODE END CAN_Init 1 */
   hcan.Instance = CAN1;
   hcan.Init.Prescaler = 4;
+#ifdef CPU_TEST_MODE
+  // 테스트 모드일 때는 루프백 (혼자 테스트)
+  hcan.Init.Mode = CAN_MODE_LOOPBACK;
+#else
+  // 평소에는 노말 (외부 연결)
   hcan.Init.Mode = CAN_MODE_NORMAL;
+#endif
   hcan.Init.SyncJumpWidth = CAN_SJW_1TQ;
   hcan.Init.TimeSeg1 = CAN_BS1_13TQ;
   hcan.Init.TimeSeg2 = CAN_BS2_2TQ;
