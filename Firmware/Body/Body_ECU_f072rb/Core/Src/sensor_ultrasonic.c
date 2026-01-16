@@ -28,61 +28,101 @@ void Ultrasonic_Trigger(void) {
 
 uint16_t distance = 0;
 // 2. 입력 캡처 인터럽트 처리 (PA6 - TIM3 CH1)
+//void Ultrasonic_Capture_Callback(TIM_HandleTypeDef *htim) {
+//    if (htim->Instance == TIM3) {
+//        if (hultrasonic.is_first_captured == 0) { // 상승 엣지 검출
+//            hultrasonic.capture_start = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_1);
+//            hultrasonic.is_first_captured = 1;
+//            // 하강 엣지 캡처로 변경
+//            __HAL_TIM_SET_CAPTUREPOLARITY(htim, TIM_CHANNEL_1, TIM_INPUTCHANNELPOLARITY_FALLING);
+//        }
+//        else { // 하강 엣지 검출
+//            hultrasonic.capture_end = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_1);
+//
+//            // 오버플로우 처리
+//            if (hultrasonic.capture_end >= hultrasonic.capture_start) {
+//                hultrasonic.diff_time = hultrasonic.capture_end - hultrasonic.capture_start;
+//            } else {
+//                hultrasonic.diff_time = (65535 - hultrasonic.capture_start) + hultrasonic.capture_end;
+//            }
+//
+//            // 거리 계산 (1tick = 1us, 왕복 거리이므로 58로 나눔)
+//            distance = hultrasonic.diff_time / 58;
+//
+//            // 3. 이동평균 필터 적용 (노이즈 제거)
+//            if (distance < 400) { // 유효 범위 내 값만 처리
+//                hultrasonic.filter_sum -= hultrasonic.filter_buf[hultrasonic.filter_idx];
+//                hultrasonic.filter_buf[hultrasonic.filter_idx] = distance;
+//                hultrasonic.filter_sum += distance;
+//                hultrasonic.filter_idx = (hultrasonic.filter_idx + 1) % FILTER_SIZE;
+//                hultrasonic.avg_distance = hultrasonic.filter_sum / FILTER_SIZE;
+//            }
+//
+//            hultrasonic.is_first_captured = 0;
+//            // 다시 상승 엣지 캡처로 변경
+//            __HAL_TIM_SET_CAPTUREPOLARITY(htim, TIM_CHANNEL_1, TIM_INPUTCHANNELPOLARITY_RISING);
+//        }
+//    }
+//}
+
 void Ultrasonic_Capture_Callback(TIM_HandleTypeDef *htim) {
     if (htim->Instance == TIM3) {
-        if (hultrasonic.is_first_captured == 0) { // 상승 엣지 검출
+        if (hultrasonic.is_first_captured == 0) {
             hultrasonic.capture_start = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_1);
             hultrasonic.is_first_captured = 1;
-            // 하강 엣지 캡처로 변경
             __HAL_TIM_SET_CAPTUREPOLARITY(htim, TIM_CHANNEL_1, TIM_INPUTCHANNELPOLARITY_FALLING);
         }
-        else { // 하강 엣지 검출
+        else {
             hultrasonic.capture_end = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_1);
 
-            // 오버플로우 처리
             if (hultrasonic.capture_end >= hultrasonic.capture_start) {
                 hultrasonic.diff_time = hultrasonic.capture_end - hultrasonic.capture_start;
             } else {
                 hultrasonic.diff_time = (65535 - hultrasonic.capture_start) + hultrasonic.capture_end;
             }
 
-            // 거리 계산 (1tick = 1us, 왕복 거리이므로 58로 나눔)
-            distance = hultrasonic.diff_time / 58;
+            uint16_t current_dist = hultrasonic.diff_time / 58;
 
-            // 3. 이동평균 필터 적용 (노이즈 제거)
-            if (distance < 400) { // 유효 범위 내 값만 처리
-                hultrasonic.filter_sum -= hultrasonic.filter_buf[hultrasonic.filter_idx];
-                hultrasonic.filter_buf[hultrasonic.filter_idx] = distance;
-                hultrasonic.filter_sum += distance;
-                hultrasonic.filter_idx = (hultrasonic.filter_idx + 1) % FILTER_SIZE;
-                hultrasonic.avg_distance = hultrasonic.filter_sum / FILTER_SIZE;
+            // --- 방법 B: EMA 필터 적용 ---
+            if (current_dist < 400) {
+                // 초기값이 0일 경우, 0에서부터 시작하면 너무 느리므로 첫 데이터는 바로 대입
+                if (hultrasonic.avg_distance == 0) {
+                    hultrasonic.avg_distance = (float)current_dist;
+                } else {
+                    // 수식: New_Avg = (Alpha * Current) + ((1 - Alpha) * Old_Avg)
+                    hultrasonic.avg_distance = (EMA_ALPHA * (float)current_dist) +
+                                               ((1.0f - EMA_ALPHA) * hultrasonic.avg_distance);
+                }
             }
 
             hultrasonic.is_first_captured = 0;
-            // 다시 상승 엣지 캡처로 변경
             __HAL_TIM_SET_CAPTUREPOLARITY(htim, TIM_CHANNEL_1, TIM_INPUTCHANNELPOLARITY_RISING);
         }
     }
 }
 
+// 결과값 반환 시 반올림 처리
+uint16_t Ultrasonic_Get_Avg_Distance(void) {
+    return (uint16_t)(hultrasonic.avg_distance + 0.5f);
+}
+
 /**
- * @brief 머리 위치 변화량 계산 (현재 평균 거리 - 기준 거리)
- * @return int8_t: 변화량 (-30 ~ +30 cm)
+ * @brief 머리 위치 변화량 계산 (범위 확장: -60 ~ +60 cm)
  */
 int8_t Ultrasonic_Get_Head_Delta(void) {
-	// Delta = 현재 평균 거리 - 동적 기준 거리
-	int16_t delta = (int16_t)hultrasonic.avg_distance - (int16_t)dynamic_baseline;
+    // Delta = 현재 평균 거리 - 동적 기준 거리
+    int16_t delta = (int16_t)hultrasonic.avg_distance - (int16_t)dynamic_baseline;
 
-    // 범위 제한 (-30 ~ +30 cm)
-    if (delta > 30) delta = 30;
-    else if (delta < -30) delta = -30;
+    // 범위 제한 수정 (-60 ~ +60 cm)
+    if (delta > 60) delta = 60;
+    else if (delta < -60) delta = -60;
 
     return (int8_t)delta;
 }
 
-uint16_t Ultrasonic_Get_Avg_Distance(void) {
-    return hultrasonic.avg_distance;
-}
+//uint16_t Ultrasonic_Get_Avg_Distance(void) {
+//    return hultrasonic.avg_distance;
+//}
 
 uint16_t Ultrasonic_Get_Distance(void) {
     return distance;

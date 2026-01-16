@@ -129,8 +129,8 @@ int main(void)
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
   CAN_Config_Filter();						  // CAN 시작 및 필터 설정
-  CAN_Test_Config_Filter(&hcan);
-  HAL_CAN_Start(&hcan);
+  CAN_Test_Config_Filter(&hcan); // 수신 테스트용 필터 (0x201 전용)
+  HAL_CAN_Start(&hcan);     // CAN 시작
   HAL_TIM_IC_Start_IT(&htim3, TIM_CHANNEL_1); // 초음파 캡처 시작
   HAL_TIM_Base_Start_IT(&htim6);			  // 0.1초 전송용 TIM6 시작
 
@@ -169,6 +169,7 @@ int main(void)
 	// 2. C02 값 읽기 및 필터 업데이트
 	CO2_Update();
 
+	// 수신 데이터 체크
 	CAN_Test_Receive_Check(&hcan);
 
 	// 3. 센서 안정화 및 간섭 방지를 위한 대기
