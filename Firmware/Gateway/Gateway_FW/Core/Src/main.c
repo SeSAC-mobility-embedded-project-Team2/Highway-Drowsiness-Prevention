@@ -29,7 +29,7 @@
 #include "unity.h"
 
 // [테스트 스위치] 이 줄이 있으면 테스트 모드, 주석(//) 처리하면 정상 모드
-#define CPU_TEST_MODE
+//#define CPU_TEST_MODE
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -62,23 +62,16 @@ UART_HandleTypeDef huart3;
   volatile uint32_t idle_counter = 0;
   uint32_t max_idle_count = 0;
   uint8_t  benchmark_done = 0; // 기준점 측정 완료 플래그
+  volatile uint32_t rx_debug_cnt = 0; // 수신 인터럽트 횟수 카운터
 #endif
 
 volatile uint8_t timer_100ms_flag = 0;
 
-// === 전역 변수 실제 생성 (메모리 할당) ===
+// ======= 메모리 할당 =======
 SystemState_t current_state = STATE_NORMAL;
 float prev_steering_angle = 0;
 uint32_t no_op_timer = 0;
-
 CAN_RxHeaderTypeDef RxHeader;
-uint8_t RxData[8];
-
-// UART 버퍼 및 구조체 변수들
-uint8_t uart_rx_buffer[8];
-extern VisionData_t vision_data;
-extern ChassisData_t chassis_data;
-extern BodyData_t body_data;
 
 /* USER CODE END PV */
 
@@ -140,7 +133,7 @@ int main(void)
     printf("-------------------------------------------------------\r\n");
     printf("   Target Project : Drowsiness Prevention System       \r\n");
     printf("   SW Version     : V0.8                               \r\n");
-    printf("   Test Date      : 2026-01-16 (Manual Run)            \r\n");
+    printf("   Test Date      : %s             \r\n",__DATE__);
     printf("=======================================================\r\n\r\n");
 
     Run_ASPICE_Unit_Tests();
@@ -151,10 +144,15 @@ int main(void)
     sFilterConfig.FilterBank = 0;
     sFilterConfig.FilterMode = CAN_FILTERMODE_IDMASK;
     sFilterConfig.FilterScale = CAN_FILTERSCALE_32BIT;
-    sFilterConfig.FilterIdHigh = 0x0000;
+
+    // 1. ID: 0x201 (Chassis) 기준
+    sFilterConfig.FilterIdHigh = (0x201 << 5);
     sFilterConfig.FilterIdLow = 0x0000;
-    sFilterConfig.FilterMaskIdHigh = 0x0000;
+
+    // 2. Mask: 0x6FF (0x201과 0x301만 통과시키도록 설정)
+    sFilterConfig.FilterMaskIdHigh = (0x6FF << 5);
     sFilterConfig.FilterMaskIdLow = 0x0000;
+
     sFilterConfig.FilterFIFOAssignment = CAN_RX_FIFO0;
     sFilterConfig.FilterActivation = ENABLE;
     sFilterConfig.SlaveStartFilterBank = 14;
@@ -243,7 +241,7 @@ int main(void)
                 // 기준점(max_idle_count) 대비 현재 카운트가 얼마나 줄었는지 계산
                 float load = (1.0f - (float)idle_counter / max_idle_count) * 100.0f;
                 if(load < 0) load = 0;
-                printf("[TEST] Load: %.1f%% | Cnt: %lu (Base: %lu)\r\n", load, idle_counter, max_idle_count);
+                printf("[TEST] Load: %.1f%% | Cnt: %lu | Rx Msg: %lu\r\n", load, idle_counter, rx_debug_cnt);
             }
 
             idle_counter = 0; // 리셋
@@ -559,6 +557,9 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
 
     if (HAL_CAN_GetRxMessage(hcan, CAN_RX_FIFO0, &RxHeader, RxData) == HAL_OK)
     {
+#ifdef CPU_TEST_MODE
+    	rx_debug_cnt++;
+#endif
         // 매니저에게 패킷 넘기기
         DMS_Process_CAN_Data(&RxHeader, RxData);
     }
@@ -601,7 +602,7 @@ void Update_System_State()
 
     float current_angle = chassis_data_local.steering_angle;
     // 변화량 계산 (ABS 매크로 사용)
-    float angle_diff = (int32_t)current_angle - prev_steering_angle;
+    float angle_diff = current_angle - prev_steering_angle;
 
     if (angle_diff < 0) angle_diff = -angle_diff;
 
@@ -665,22 +666,16 @@ void Update_System_State()
     	}
     }
 
-    // 1. MRM 트리거 조건 판단 (예: Danger 상태이거나, 센서가 다 죽었거나)
+    // MRM 트리거 조건 판단 (예: Danger 상태이거나, 센서가 다 죽었거나)
     uint8_t mrm_cmd = 0;
     if (current_state == STATE_DANGER || current_state == STATE_FAULT)
     {
         mrm_cmd = 1; // 멈춰!
     }
 
-    // 2. 에러 플래그 판단 (예: Vision 데이터가 너무 안 들어올 때)
-    uint8_t sys_err = 0;
-    if (vision_data_local.err_flag != 0) // Vision 센서 에러 시
-    {
-        sys_err = 1; // LogicFail (또는 ICD에 맞는 에러코드)
-    }
 
-    // 3. 제어 신호 전송 (ICD V0.1.2 규격)
-    DMS_Send_Control_Signal(&huart3, current_state, mrm_cmd, sys_err);
+    // 제어 신호 전송 (ICD V0.1.2 규격)
+    DMS_Send_Control_Signal(&huart3, current_state, mrm_cmd, 0);
 
     // 수정된 printf (무조작 시간 확인용)
 //        printf("Risk: %d | Eye_safe : %d%% | detected : %d | Hands: %.1fs | Head: %.1f | Steer: %.1f | NoOp: %.1fs\r\n",
