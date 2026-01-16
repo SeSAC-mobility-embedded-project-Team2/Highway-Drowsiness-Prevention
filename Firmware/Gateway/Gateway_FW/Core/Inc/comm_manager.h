@@ -8,9 +8,9 @@
 // ==========================================
 // 1. 전역 데이터 변수 (외부에서 접근 가능하게 선언)
 // ==========================================
-extern VisionData_t  vision_data;
-extern ChassisData_t chassis_data;
-extern BodyData_t    body_data;
+//extern VisionData_t  vision_data;
+//extern ChassisData_t chassis_data;
+//extern BodyData_t    body_data;
 
 // ==========================================
 // 2. 함수 원형 선언

@@ -41,19 +41,16 @@ typedef struct {
     uint8_t  err_flag  : 4;// 상위 4비트: 0=OK, 1=SonarFail, 2=TouchFail
 } BodyData_t;
 
-// ==========================================
-// 3.
-// ==========================================
+//=====main.c 에서 할당 =====
 extern SystemState_t current_state;
 extern float prev_steering_angle;
 extern uint32_t no_op_timer;
-
 extern CAN_RxHeaderTypeDef RxHeader;
-extern uint8_t RxData[8];
 
+//=====comm_manager.c 에서 할당 =====
 extern uint8_t uart_rx_buffer[8];
-extern VisionData_t vision_rx_packet; // 구조체 이름 확인 필요
-extern ChassisData_t chassis_info;
-extern BodyData_t body_info;
+extern VisionData_t vision_data;
+extern ChassisData_t chassis_data;
+extern BodyData_t body_data;
 
 #endif

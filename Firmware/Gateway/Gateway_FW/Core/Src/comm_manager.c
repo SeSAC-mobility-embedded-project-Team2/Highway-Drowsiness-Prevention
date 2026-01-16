@@ -1,9 +1,10 @@
 #include "comm_manager.h"
 
 // 실제 변수 메모리 할당
-VisionData_t  vision_data  = {0};
-ChassisData_t chassis_data = {0};
-BodyData_t    body_data    = {0};
+VisionData_t  vision_data  	= {0};
+ChassisData_t chassis_data 	= {0};
+BodyData_t    body_data    	= {0};
+uint8_t uart_rx_buffer[8];
 
 // === 1. UART 수신 처리 (Vision) ===
 void DMS_Process_UART_Data(UART_HandleTypeDef *huart, uint8_t *buffer)
