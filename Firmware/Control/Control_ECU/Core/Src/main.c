@@ -26,6 +26,7 @@
 #include "DC_Motor.h"
 #include "Max7219.h"
 #include "Buzzer.h"
+//#include "PC_Comm.h"
 #include <stdio.h>
 #include <string.h>
 /* USER CODE END Includes */
@@ -51,7 +52,9 @@ SPI_HandleTypeDef hspi1;
 TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
 
-UART_HandleTypeDef huart3;
+UART_HandleTypeDef huart2;	// PC 통신용
+UART_HandleTypeDef huart3;	// STM 간 통신용
+uint8_t uart2_rcvbyte;      // UART2 임시 수신 바이트
 
 /* USER CODE BEGIN PV */
 
@@ -98,6 +101,7 @@ static void MX_TIM2_Init(void);
 static void MX_SPI1_Init(void);
 static void MX_TIM3_Init(void);
 static void MX_USART3_UART_Init(void);
+static void MX_USART2_UART_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -137,6 +141,15 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 		// 다시 1바이트 수신 대기
 		HAL_UART_Receive_IT(&huart3, &uart_rcvbyte, 1);
 	}
+
+	/*
+	else if(huart->Instance == USART2)
+	{
+		// PC_Comm 모듈로 데이터 전달
+		PC_Comm_HandleByte(uart2_rcvbyte);
+		HAL_UART_Receive_IT(&huart2, &uart2_rcvbyte, 1);
+	}
+	*/
 }
 
 /*----------------------------- 수신 콜백 함수 수정 -------------------------------*/
@@ -176,13 +189,16 @@ int main(void)
   MX_SPI1_Init();
   MX_TIM3_Init();
   MX_USART3_UART_Init();
+  MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
 
   Max7219_Init();			// for MAX7219     초기화
   Servo_Init(&htim2); 		// for Servo Motor 초기화
   DC_Motor_Init(&htim3);	// for DC Motor    초기화
+  //PC_Comm_Init(&huart2);
 
   HAL_UART_Receive_IT(&huart3, &uart_rcvbyte, 1);	// 최초 수신 시작
+  //HAL_UART_Receive_IT(&huart2, &uart2_rcvbyte, 1); // UART2 수신 시작
 
 
   /* USER CODE END 2 */
@@ -193,8 +209,12 @@ int main(void)
   while (1)
   {
 
-	  /*----------------------------- 패킷 검사 및 해석 -------------------------------*/
+	  /* [1] PC 통신 처리 (UART2) */
+	  // PC에서 보낸 설정값(예: SET_OPEN:1500)이 있는지 확인하고 변수(g_rotation_time_open 등)를 업데이트합니다.
+	  //PC_Comm_Process();
 
+
+	  // [2] 시스템 상태 패킷 해석 (UART3)
 	  if(bPacketReady)
 	  {
 		  bPacketReady = 0;
@@ -225,12 +245,10 @@ int main(void)
 	  }
 
 
-	  /*----------------------------- 패킷 수신 함수 추가 -------------------------------*/
-
 	  // --- 여기서부터 상태 플래그에 따라 모듈 제어 예정 ---
 
 
-	  /* 3. 상태 변화 트리거 (최초 1회성 동작들) */
+	  /* [3] 상태 변화 시 1회성 트리거 동작 */
 	  if (currentSystemStatus != lastStatus)
 	  {
 		  // 상태가 바뀌는 순간에만 필요한 초기화 작업 수행
@@ -241,19 +259,20 @@ int main(void)
 		  lastStatus = currentSystemStatus;
 	  }
 
-	  /* 4. 모듈별 실시간 업데이트 (비차단 방식) */
-	  // 이 함수들이 매 루프마다 호출되어야 감속/스크롤/부저음이 부드럽게 작동함
+	  /* [4] 모듈별 실시간 업데이트 (비차단 방식) */
+	  // 모든 모듈은 내부적으로 HAL_GetTick()을 사용하여 병렬적으로 동작합니다.
 	  Buzzer_Update((uint8_t)currentSystemStatus);
+
+	  // Servo_Update는 내부에서 전역 변수(g_rotation_time_open 등)를 사용하여 동작합니다.
 	  Servo_Update((uint8_t)currentSystemStatus);
 
-	  // [핵심] DC 모터의 3초 선형 감속 프로세스가 이 함수 내부에서 HAL_GetTick으로 작동함
+	  // DC 모터의 3초 선형 감속 로직 실행
 	  DC_Motor_Update((uint8_t)currentSystemStatus);
 
-	  // 도트 매트릭스 출력 (스크롤 방식일 경우 비차단 Update 함수 사용 권장)
-	  // 만약 Max7219_ScrollText가 내부에서 딜레이를 쓴다면 감속에 영향을 줄 수 있음
+	  // 도트 매트릭스 비차단 스크롤 출력
 	  Max7219_Update((uint8_t)currentSystemStatus);
 
-	  /* 과부하 방지 딜레이 */
+	  /* [5] 시스템 안정성을 위한 미세 딜레이 */
 	  HAL_Delay(10);
 
     /* USER CODE END WHILE */
@@ -455,6 +474,39 @@ static void MX_TIM3_Init(void)
 
   /* USER CODE END TIM3_Init 2 */
   HAL_TIM_MspPostInit(&htim3);
+
+}
+
+/**
+  * @brief USART2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USART2_UART_Init(void)
+{
+
+  /* USER CODE BEGIN USART2_Init 0 */
+
+  /* USER CODE END USART2_Init 0 */
+
+  /* USER CODE BEGIN USART2_Init 1 */
+
+  /* USER CODE END USART2_Init 1 */
+  huart2.Instance = USART2;
+  huart2.Init.BaudRate = 115200;
+  huart2.Init.WordLength = UART_WORDLENGTH_8B;
+  huart2.Init.StopBits = UART_STOPBITS_1;
+  huart2.Init.Parity = UART_PARITY_NONE;
+  huart2.Init.Mode = UART_MODE_TX_RX;
+  huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart2.Init.OverSampling = UART_OVERSAMPLING_16;
+  if (HAL_UART_Init(&huart2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART2_Init 2 */
+
+  /* USER CODE END USART2_Init 2 */
 
 }
 

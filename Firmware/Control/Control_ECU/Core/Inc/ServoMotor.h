@@ -22,11 +22,23 @@
  *
  */
 
+
+/* 무한 회전 서보모터 제어 설정 */
 #define SERVO_STOP_VALUE    1500  // 실험을 통해 멈추는 값으로 수정 (예: 1485)
 #define SERVO_SPEED_CW      1600  // 정방향 회전 속도
 #define SERVO_SPEED_CCW     1400  // 역방향 회전 속도
-#define ROTATION_TIME_OPEN  1180  // 90도 회전 소요 시간(ms)
-#define ROTATION_TIME_CLOSE 1200
+
+/* PC_Comm에서 수정할 수 있도록 추가할 매크로 및 전역 변수 선언 */
+#define DEFAULT_OPEN_TIME  1180  // 90도 회전 소요 시간(ms)
+#define DEFAULT_CLOSE_TIME 1302	 // 1300이 정배
+
+// 창문의 물리적 상태 정의
+#define WINDOW_CLOSED       0
+#define WINDOW_OPEN         1
+
+// PC_Comm(USRAT2 전용)에서 수정할 수 있도록 전역 변수로 선언
+extern uint32_t g_rotation_time_open;
+extern uint32_t g_rotation_time_close;
 
 /* 함수 선언 */
 void Servo_Init(TIM_HandleTypeDef *htim);
