@@ -130,23 +130,14 @@ int main(void)
   /* USER CODE BEGIN 2 */
   CAN_Config_Filter();						  // CAN 시작 및 필터 설정
   HAL_TIM_IC_Start_IT(&htim3, TIM_CHANNEL_1); // 초음파 캡처 시작
-  HAL_TIM_Base_Start_IT(&htim6);			  // 0.1초 전송용 TIM6 시작
-
-  // --- 테스트 코드 추가 ---
-  printf("\r\n==============================\r\n");
-  printf("System Start! Hello, World!\r\n");
-  printf("Baudrate: 38400\r\n");
-  printf("==============================\r\n");
+//  HAL_TIM_Base_Start_IT(&htim6);			  // 0.1초 전송용 TIM6 시작
 
   // --- 캘리브레이션 단계 추가 ---
-  uint32_t start_time = HAL_GetTick();
-  while (HAL_GetTick() - start_time < 3000) {
-	  Ultrasonic_Trigger(); // 3초 동안 계속 트리거하여 이동평균 필터 채우기
-	  HAL_Delay(100);       // 100ms 간격으로 측정
-	  if ((HAL_GetTick() - start_time) % 500 < 100) {
-		  printf("."); // 진행 표시
-		  }
-  }
+  HAL_Delay(3000);
+  uint16_t avg_dist = Ultrasonic_Get_Avg_Distance();
+  Ultrasonic_Set_Baseline(avg_dist);
+
+  HAL_TIM_Base_Start_IT(&htim6);			  // 0.1초 전송용 TIM6 시작
 
   // 3초 후의 평균 거리를 기준점으로 설정
   uint16_t final_baseline = Ultrasonic_Get_Avg_Distance();
@@ -161,18 +152,6 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	// 1. 초음파 측정 트리거
-	Ultrasonic_Trigger();
-
-	// 2. C02 값 읽기 및 필터 업데이트
-	CO2_Update();
-
-	// 3. 센서 안정화 및 간섭 방지를 위한 대기
-	HAL_Delay(100);
-
-	// Interrupt Count가 계속 올라가는지, diff_time에 숫자가 찍히는지 확인 필수
-//	printf("Avg_Dist:%u cm | Dist:%u cm | CO2:%u \r\n",
-//			Ultrasonic_Get_Avg_Distance(), Ultrasonic_Get_Distance(), CO2_Get_Value());
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -511,22 +490,13 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
         int8_t delta = Ultrasonic_Get_Head_Delta();
         uint8_t touch = 1;
         hands_off_counter = 0;
-//        uint8_t touch = Touch_Get_Status();
         uint8_t raw_dist = (uint8_t)Ultrasonic_Get_Distance();
 
-        // 2. Hands_Off_Time 계산 (0.1초 단위)
-//        if (touch == 0) { // 손을 떼고 있다면
-//            if (hands_off_counter < 255) hands_off_counter++; // 0.1초 누적
-//        } else {
-//            hands_off_counter = 0; // 손을 잡으면 즉시 리셋
-//        }
-
-        // 3. 변경된 명세로 CAN 전송
+        // 2. 변경된 명세로 CAN 전송
         CAN_Tx_SensorData(delta, hands_off_counter, raw_dist, touch);
 
-        // 로그 출력
-        printf("[CAN] Delta:%d | OffTime:%d | Raw:%u | Touch:%d\r\n",
-                delta, hands_off_counter, raw_dist, touch);
+        // 4. (선택) 트리거 발생 - 초음파 센서 측정 시작
+		Ultrasonic_Trigger();
     }
 }
 /* USER CODE END 4 */

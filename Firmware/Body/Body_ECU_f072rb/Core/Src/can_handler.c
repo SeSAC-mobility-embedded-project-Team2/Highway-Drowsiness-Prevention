@@ -31,50 +31,56 @@ void CAN_Config_Filter(void) {
 }
 
 /**
- * @brief 명세서(0x301) 기준 CAN 전송
+ * @brief Body ECU 센서 데이터 CAN 전송 (ID: 0x301)
  * @param head_delta: 머리 위치 변화량 (int8_t)
- * @param hands_off_val: 손 뗀 시간 (0.1s 단위, 50 = 5.0초)
+ * @param hands_off_val: 손 뗀 시간 (0.1s 단위)
  * @param raw_dist: 초음파 원본 거리 (uint8_t)
  * @param touch_raw: 터치 센서 원본 (0 or 1)
+ */
+/**
+ * @brief Body ECU 센서 데이터 CAN 전송 (ID: 0x301)
  */
 void CAN_Tx_SensorData(int8_t head_delta, uint8_t hands_off_val, uint8_t raw_dist, uint8_t touch_raw) {
     CAN_TxHeaderTypeDef TxHeader;
     uint32_t TxMailbox;
-    uint8_t tx_data[8] = {0}; // 8바이트 데이터 필드
+    uint8_t tx_data[8] = {0};
 
-    /* --- [명세서 기반 데이터 매핑] --- */
+    // 8바이트 배열을 Body_Data_t 구조체 포인터로 매핑
+    Body_Data_t *pMsg = (Body_Data_t *)tx_data;
 
-    // Byte 0: Head_Delta_cm (int8_t, Factor 1)
-    tx_data[0] = (int8_t)head_delta;
+    // 1. 데이터 매핑 (ICD V1.1 멤버 이름 적용)
+    // head_delta(변화량)을 distance_head 필드에 할당
+    pMsg->distance_head = (uint8_t)head_delta;      // Byte 0
 
-    // Byte 1: Hands_Off_Time (uint8_t, Factor 0.1)
-    // 수신측에서 이 값에 0.1을 곱함. (예: 50 전송 시 5.0초로 인식)
-    tx_data[1] = hands_off_val;
+    // touch_raw(현재 터치 여부)를 touch_handle 비트에 할당
+    pMsg->touch_handle = (touch_raw > 0) ? 1 : 0;   // Byte 1, bit 0
 
-    // Byte 2: Sonar_Raw_Dist (uint8_t, Factor 1)
-    tx_data[2] = raw_dist;
+    // hands_off_val(누적 시간)과 raw_dist는 reserved 공간을 활용하여 전송
+    pMsg->reserved[0] = hands_off_val;              // Byte 2
+    pMsg->reserved[1] = raw_dist;                   // Byte 3
 
-    // Byte 3: Touch_Raw_Val (Bit 0 사용)
-    tx_data[3] = (touch_raw & 0x01);
+    // 2. 에러 플래그 로직 (SonarFail)
+    uint8_t current_err = 0;
+    if (raw_dist == 0 || raw_dist > 400) {
+        current_err = 1;
+    }
 
-    // Byte 4~6: Reserved (공백)
+    // 3. Safety Fields (Byte 7) 업데이트
+    pMsg->alive_cnt = (body_alive_counter & 0x0F);
+    pMsg->err_flag = (current_err & 0x0F);
 
-    // Byte 7: DMS_Alive_Cnt(Bit 0~3) & DMS_Err_Flag(Bit 4~7)
-    // 에러 상태: 0:OK, 1:SonarFail, 2:TouchFail
-    uint8_t err_flag = 0;
-    if (raw_dist == 0 || raw_dist > 400) err_flag = 1; // 초음파 이상 예시
+    // 4. Alive Counter 업데이트 (0~15 순환)
+    body_alive_counter = (body_alive_counter + 1) % 16;
 
-    tx_data[7] = (body_alive_counter & 0x0F) | ((err_flag & 0x0F) << 4);
-
-    /* --- [CAN 전송 설정] --- */
-    TxHeader.StdId = 0x301;
-    TxHeader.DLC = 8;
-    TxHeader.IDE = CAN_ID_STD;
+    // 5. CAN 전송 헤더 설정
+    TxHeader.StdId = CAN_ID_BODY; // 0x301
     TxHeader.RTR = CAN_RTR_DATA;
+    TxHeader.IDE = CAN_ID_STD;
+    TxHeader.DLC = 8;
+    TxHeader.TransmitGlobalTime = DISABLE;
 
-    if (HAL_CAN_GetTxMailboxesFreeLevel(&hcan) > 0) {
-        if (HAL_CAN_AddTxMessage(&hcan, &TxHeader, tx_data, &TxMailbox) == HAL_OK) {
-            body_alive_counter = (body_alive_counter + 1) % 16;
-        }
+    // 6. CAN 메시지 전송
+    if (HAL_CAN_AddTxMessage(&hcan, &TxHeader, tx_data, &TxMailbox) != HAL_OK) {
+        // 전송 에러 시 처리 (필요 시 작성)
     }
 }
