@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 
-extern UART_HandleTypeDef huart2; // main.c의 UART 핸들러 사용
+extern UART_HandleTypeDef huart3; // main.c의 UART 핸들러 사용
 
 /* 정적 변수 정의 */
 static TIM_HandleTypeDef *pMotorTimer;
@@ -26,7 +26,7 @@ void DC_Motor_Init(TIM_HandleTypeDef *htim) {
     HAL_TIM_PWM_Start(pMotorTimer, TIM_CHANNEL_1);
 
     sprintf(debugBuf, "\r\n[MOTOR] Init Complete. DIR: SET, BRK: RESET\r\n");
-    HAL_UART_Transmit(&huart2, (uint8_t*)debugBuf, strlen(debugBuf), 10);
+    HAL_UART_Transmit(&huart3, (uint8_t*)debugBuf, strlen(debugBuf), 10);
 
     DC_Motor_SetSpeed(MOTOR_SPEED_NORMAL);
 }
@@ -35,29 +35,19 @@ void DC_Motor_Init(TIM_HandleTypeDef *htim) {
   * @brief 속도 설정 및 실제 레지스터/핀 상태 확인
   */
 void DC_Motor_SetSpeed(uint32_t speed) {
+
     __HAL_TIM_SET_COMPARE(pMotorTimer, TIM_CHANNEL_1, speed);
 
-    // 실제 하드웨어 핀 상태 읽기 (교차 검증)
-    GPIO_PinState dir = HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_6);
-    GPIO_PinState brk = HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_7);
-
-    // [핵심 디버그] 현재 속도와 물리 핀 상태 출력
-    sprintf(debugBuf, "[MOTOR LOG] Speed: %lu, DIR: %s, BRK: %s\r\n",
-            speed,
-            (dir == GPIO_PIN_SET) ? "HIGH" : "LOW",
-            (brk == GPIO_PIN_SET) ? "HIGH" : "LOW");
-    HAL_UART_Transmit(&huart2, (uint8_t*)debugBuf, strlen(debugBuf), 10);
 }
 
 /**
   * @brief 시스템 상태에 따른 감속 로직 및 디버그
   */
 void DC_Motor_Update(uint8_t currentStatus) {
-    // 1. 상태가 변할 때 알림
-    if (currentStatus != lastStatus) {
-        sprintf(debugBuf, ">> [MOTOR] Status Trigger: %d -> %d\r\n", lastStatus, currentStatus);
-        HAL_UART_Transmit(&huart2, (uint8_t*)debugBuf, strlen(debugBuf), 10);
 
+    // 1. 상태가 변할 때 알림
+    if (currentStatus != lastStatus)
+    {
         if (currentStatus == 2) { // DANGER
             isDecelerating = 1;
             lastSpeedTick = HAL_GetTick();
@@ -82,8 +72,7 @@ void DC_Motor_Update(uint8_t currentStatus) {
                 DC_Motor_SetSpeed(currentSpeed);
             } else {
                 isDecelerating = 0;
-                sprintf(debugBuf, "[MOTOR] Deceleration Finished. Safe Speed Maintained.\r\n");
-                HAL_UART_Transmit(&huart2, (uint8_t*)debugBuf, strlen(debugBuf), 10);
+
             }
         }
     }

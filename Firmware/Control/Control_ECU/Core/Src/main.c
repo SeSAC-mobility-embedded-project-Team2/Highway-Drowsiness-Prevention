@@ -47,10 +47,11 @@
 
 /* Private variables ---------------------------------------------------------*/
 SPI_HandleTypeDef hspi1;
+
 TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
 
-UART_HandleTypeDef huart2;
+UART_HandleTypeDef huart3;
 
 /* USER CODE BEGIN PV */
 
@@ -64,7 +65,7 @@ typedef enum {
 } SystemStatus_t;
 
 // UART 패킷 수신용
-uint8_t rxPacket[8];				// [Header, Alert_Level, MRM_Trigger, Checksum]
+uint8_t rxPacket[10];				// UART 패킷 수신용 (ID 2바이트 + 데이터 8바이트 = 총 10바이트)
 uint8_t rxIndex = 0;				// 수신 바이트 위치 카운트
 uint8_t uart_rcvbyte;				// 1바이트 임시 수신용
 volatile uint8_t bPacketReady = 0;	// 패킷 완성 플래그
@@ -93,10 +94,10 @@ volatile uint8_t bUART_RX = 0;
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
-static void MX_USART2_UART_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_SPI1_Init(void);
 static void MX_TIM3_Init(void);
+static void MX_USART3_UART_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -108,25 +109,33 @@ static void MX_TIM3_Init(void);
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
-	if(huart->Instance == USART2)
+	if(huart->Instance == USART3) // USART2에서 USART3로 수정 완료
 	{
-		// 1. 헤더 찾기 (패킷의 시작)
-		// 시작 신호를 통일 해야함 (0x401)
-//		if(rxIndex == 0 && uart_rcvbyte == 0x401) {
+		// 1. ID 첫 번째 바이트 확인 (0x04)
+		if(rxIndex == 0) {
+			if(uart_rcvbyte == 0x04) rxPacket[rxIndex++] = uart_rcvbyte;
+			else rxIndex = 0; // 일치하지 않으면 초기화
+		}
 
-		// 2. 나머지 데이터 채우기
-		if(rxIndex >= 0) {
+		// 2. ID 두 번째 바이트 확인 (0x01)
+		else if(rxIndex == 1) {
+			if(uart_rcvbyte == 0x01) rxPacket[rxIndex++] = uart_rcvbyte;
+			else rxIndex = 0; // 일치하지 않으면 초기화
+		}
+
+		// 3. 나머지 8바이트 데이터 채우기
+		else if(rxIndex >= 2) {
 			rxPacket[rxIndex++] = uart_rcvbyte;
 
-			// 3. 4바이트 패킷이 완성되었는가?
-			if(rxIndex >= 8) {
-				bPacketReady = 1;	// 패킷 완성
-				rxIndex = 0; 		// 다음 패킷을 위해 인덱스 초기화
+			// 총 10바이트가 완성되었는가?
+			if(rxIndex >= 10) {
+				bPacketReady = 1;
+				rxIndex = 0;
 			}
 		}
 
 		// 다시 1바이트 수신 대기
-		HAL_UART_Receive_IT(&huart2, &uart_rcvbyte, 1);
+		HAL_UART_Receive_IT(&huart3, &uart_rcvbyte, 1);
 	}
 }
 
@@ -163,20 +172,18 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
-  MX_USART2_UART_Init();
   MX_TIM2_Init();
   MX_SPI1_Init();
   MX_TIM3_Init();
+  MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
 
   Max7219_Init();			// for MAX7219     초기화
   Servo_Init(&htim2); 		// for Servo Motor 초기화
   DC_Motor_Init(&htim3);	// for DC Motor    초기화
 
-  HAL_UART_Receive_IT(&huart2, &uart_rcvbyte, 1);	// 최초 수신 시작
+  HAL_UART_Receive_IT(&huart3, &uart_rcvbyte, 1);	// 최초 수신 시작
 
-  sprintf(debugMsg, "System Ready...\r\n");
-  HAL_UART_Transmit(&huart2, (uint8_t*)debugMsg, strlen(debugMsg), 10);
 
   /* USER CODE END 2 */
 
@@ -192,46 +199,31 @@ int main(void)
 	  {
 		  bPacketReady = 0;
 
-		  uint8_t alertLevel = rxPacket[0]; // ICD : Byte 0 (Aleret_Level)
-		  uint8_t mrmTrigger = rxPacket[1];	// ICD : Byte 1 (MRM_Trigger)
-//		  uint8_t checksum 	 = rxPacket[7];
+		  // ID(2바이트) 이후의 데이터 위치에서 값 추출
+		  uint8_t alertLevel = rxPacket[2]; // Index 0 -> 2
+		  uint8_t mrmTrigger = rxPacket[3];	// Index 1 -> 3
 
-		  // 데이터 무결성 검사 (Header 제외 간단한 합산)
-//		  if(checksum == (uint8_t)(alertLevel + mrmTrigger))
-//		  {
-			  // 위험 상태 판단 로직
-			  if(alertLevel == 2 || mrmTrigger == 1)
-			  {
-				  currentSystemStatus = STATUS_DANGER;
-			  }
-			  else if(alertLevel == 1)
-			  {
-			      currentSystemStatus = STATUS_WARNING;
-			  }
-			  else if(alertLevel == 3)
-			  {
-			      currentSystemStatus = STATUS_FAULT;
-			  }
-			  else
-			  {
-			      currentSystemStatus = STATUS_NORMAL;
-			  }
+		  // 위험 상태 판단 로직
+		  if(alertLevel == 2 || mrmTrigger == 1)
+		  {
+			  currentSystemStatus = STATUS_DANGER;
+		  }
+		  else if(alertLevel == 1)
+		  {
+			  currentSystemStatus = STATUS_WARNING;
+		  }
+		  else if(alertLevel == 3)
+		  {
+			  currentSystemStatus = STATUS_FAULT;
+		  }
+		  else
+		  {
+			  currentSystemStatus = STATUS_NORMAL;
+		  }
 
-			  // (디버깅용) 현재 상태를 UART로 출력
-			  char msg[30];
-			  sprintf(msg, "Status Updated: %d\r\n", currentSystemStatus);
-			  HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 10);
-//		  }
+
 	  }
 
-
-	  /* 상태 변경 시 디버그 메시지 1회 출력 (무한 반복 방지) */
-	  if (currentSystemStatus != lastStatusForDebug)
-	  {
-			sprintf(debugMsg, ">> Status Changed: %d\r\n", currentSystemStatus);
-			HAL_UART_Transmit(&huart2, (uint8_t*)debugMsg, strlen(debugMsg), 10);
-			lastStatusForDebug = currentSystemStatus;
-	   }
 
 	  /*----------------------------- 패킷 수신 함수 추가 -------------------------------*/
 
@@ -467,35 +459,35 @@ static void MX_TIM3_Init(void)
 }
 
 /**
-  * @brief USART2 Initialization Function
+  * @brief USART3 Initialization Function
   * @param None
   * @retval None
   */
-static void MX_USART2_UART_Init(void)
+static void MX_USART3_UART_Init(void)
 {
 
-  /* USER CODE BEGIN USART2_Init 0 */
+  /* USER CODE BEGIN USART3_Init 0 */
 
-  /* USER CODE END USART2_Init 0 */
+  /* USER CODE END USART3_Init 0 */
 
-  /* USER CODE BEGIN USART2_Init 1 */
+  /* USER CODE BEGIN USART3_Init 1 */
 
-  /* USER CODE END USART2_Init 1 */
-  huart2.Instance = USART2;
-  huart2.Init.BaudRate = 115200;
-  huart2.Init.WordLength = UART_WORDLENGTH_8B;
-  huart2.Init.StopBits = UART_STOPBITS_1;
-  huart2.Init.Parity = UART_PARITY_NONE;
-  huart2.Init.Mode = UART_MODE_TX_RX;
-  huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-  huart2.Init.OverSampling = UART_OVERSAMPLING_16;
-  if (HAL_UART_Init(&huart2) != HAL_OK)
+  /* USER CODE END USART3_Init 1 */
+  huart3.Instance = USART3;
+  huart3.Init.BaudRate = 115200;
+  huart3.Init.WordLength = UART_WORDLENGTH_8B;
+  huart3.Init.StopBits = UART_STOPBITS_1;
+  huart3.Init.Parity = UART_PARITY_NONE;
+  huart3.Init.Mode = UART_MODE_TX_RX;
+  huart3.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart3.Init.OverSampling = UART_OVERSAMPLING_16;
+  if (HAL_UART_Init(&huart3) != HAL_OK)
   {
     Error_Handler();
   }
-  /* USER CODE BEGIN USART2_Init 2 */
+  /* USER CODE BEGIN USART3_Init 2 */
 
-  /* USER CODE END USART2_Init 2 */
+  /* USER CODE END USART3_Init 2 */
 
 }
 
