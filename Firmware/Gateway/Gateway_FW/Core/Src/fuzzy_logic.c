@@ -21,14 +21,14 @@ uint8_t Compute_Integrated_Risk(uint8_t perclos, float steer_std, float hands_of
     float risk_eye   = Fuzzy_Trapezoid((float)perclos, 40.0f, 60.0f);
     float risk_steer = Fuzzy_Trapezoid(steer_std, 20.0f, 40.0f);
     float risk_hands = Fuzzy_Trapezoid(hands_off_sec, 2.0f, 5.0f);
-    float risk_head  = Fuzzy_Trapezoid(ABS(head_delta), 10.0f, 25.0f);
-    float risk_noop  = Fuzzy_Trapezoid(no_op_sec, 10.0f, 20.0f) * 0.8f; // 최대 60점(Warning) 제한
+    float risk_head  = Fuzzy_Trapezoid(ABS(head_delta), 8.0f, 15.0f);
+    float risk_noop  = Fuzzy_Trapezoid(no_op_sec, 5.0f, 10.0f) * 0.8f; // 최대 80점(Warning) 제한
 
     // [Step 2] Rule Evaluation (눈부심 방지)
     // 눈만 위험하고(>0.8), 나머지는 아주 멀쩡하면(<0.2) -> 눈부심(Glare)으로 간주
     if (risk_eye > 0.8f)
     {
-        if (risk_steer < 0.2f && risk_hands < 0.2f && risk_head < 0.2f)
+        if (risk_steer < 0.1f && risk_hands < 0.1f && risk_head < 0.1f)
         {
              risk_eye = 0.3f; // 강제 Normal 처리
         }
@@ -36,9 +36,9 @@ uint8_t Compute_Integrated_Risk(uint8_t perclos, float steer_std, float hands_of
 
     // [Step 3] Defuzzification (MAX Rule)
     // 그룹 1: 만성 졸음 (눈, 핸들흔들림, 무조작)
-    float risk_slow = risk_eye;
-    if (risk_steer > risk_slow) risk_slow = risk_steer;
+    float risk_slow = risk_steer;
     if (risk_noop  > risk_slow) risk_slow = risk_noop;
+    if (risk_eye > risk_slow) risk_slow = risk_eye;
 
     // 그룹 2: 급박한 위험 (손뗌, 고개숙임)
     float risk_fast = risk_hands;

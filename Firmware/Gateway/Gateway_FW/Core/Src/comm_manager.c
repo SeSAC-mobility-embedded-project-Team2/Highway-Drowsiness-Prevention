@@ -5,6 +5,8 @@ VisionData_t  vision_data  	= {0};
 ChassisData_t chassis_data 	= {0};
 BodyData_t    body_data    	= {0};
 uint8_t uart_rx_buffer[8];
+// [TEST SUPPORT]
+uint8_t g_last_tx_packet[10] = {0};
 
 // === 1. UART 수신 처리 (Vision) ===
 void DMS_Process_UART_Data(UART_HandleTypeDef *huart, uint8_t *buffer)
@@ -23,8 +25,6 @@ void DMS_Process_UART_Data(UART_HandleTypeDef *huart, uint8_t *buffer)
         vision_data.alive_cnt = status & 0x0F;
         vision_data.err_flag  = (status >> 4) & 0x0F;
 
-        // [중요] 다음 수신을 위해 인터럽트 재활성화
-        // (주의: main.c의 전역 버퍼 'uart_rx_buffer'를 계속 쓴다고 가정)
         HAL_UART_Receive_IT(huart, buffer, 8);
     }
 }
@@ -105,9 +105,49 @@ void DMS_Send_Control_Signal(UART_HandleTypeDef *huart, SystemState_t state, uin
     // Alive Count 증가
     gateway_alive_cnt = (gateway_alive_cnt + 1) % 16;
 
+    for(int i=0; i<10; i++)
+    {
+    	g_last_tx_packet[i] = tx_packet[i];
+    }
+
     // --------------------------------------------------------
     // [전송] UART Transmit (총 10 Bytes)
     // --------------------------------------------------------
     // main.c에서 넘겨준 huart 핸들러(UART3)로 전송
     HAL_UART_Transmit(huart, tx_packet, 10, 10);
+}
+
+void DMS_Send_Dashboard_Data(UART_HandleTypeDef *huart, uint8_t risk_score)
+{
+    DashboardPacket_t tx_packet;
+
+    // 1. 헤더 (Sync)
+    tx_packet.header = 0xFCFD; // 리틀 엔디안: FD FC 순으로 전송됨
+
+    // 2. 데이터 채우기 (전역 변수 활용)
+    // [Vision]
+    tx_packet.perclos          = vision_data.perclos;
+    tx_packet.is_eye_closed    = vision_data.is_eye_closed;
+    tx_packet.is_face_detected = vision_data.is_face_detected;
+    tx_packet.v_alive_cnt      = vision_data.alive_cnt;
+    tx_packet.v_err_flag       = vision_data.err_flag;
+
+    // [Chassis]
+    tx_packet.steering_std_dev = chassis_data.steering_std_dev;
+    tx_packet.steering_angle   = chassis_data.steering_angle;
+    tx_packet.c_alive_cnt      = chassis_data.alive_cnt;
+    tx_packet.c_err_flag       = chassis_data.err_flag;
+
+    // [Body]
+    tx_packet.head_delta_cm    = body_data.head_delta_cm;
+    tx_packet.hands_off_sec    = body_data.hands_off_sec;
+    tx_packet.no_op_sec        = body_data.no_op_sec;
+    tx_packet.b_alive_cnt      = body_data.alive_cnt;
+    tx_packet.b_err_flag       = body_data.err_flag;
+
+    // [Result]
+    tx_packet.risk_level       = risk_score;
+
+    // 3. UART 전송 (Blocking 방식, 10ms 타임아웃)
+    HAL_UART_Transmit(huart, (uint8_t*)&tx_packet, sizeof(DashboardPacket_t), 10);
 }

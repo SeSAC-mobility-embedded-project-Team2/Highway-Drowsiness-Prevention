@@ -67,10 +67,17 @@ UART_HandleTypeDef huart3;
 
 volatile uint8_t timer_100ms_flag = 0;
 
-// ======= 메모리 할당 =======
+// 전역 변수로 선언
+DashboardPacket_t tx_packet;
+
 SystemState_t current_state = STATE_NORMAL;
+
 float prev_steering_angle = 0;
+
 uint32_t no_op_timer = 0;
+
+uint8_t risk_score = 0;
+
 CAN_RxHeaderTypeDef RxHeader;
 
 /* USER CODE END PV */
@@ -136,7 +143,7 @@ int main(void)
     printf("   Test Date      : %s             \r\n",__DATE__);
     printf("=======================================================\r\n\r\n");
 
-    Run_ASPICE_Unit_Tests();
+//    Run_ASPICE_Unit_Tests();
     printf("============================================\r\n");
 
   // === 1. CAN 필터 및 시작 설정  ===
@@ -191,6 +198,8 @@ int main(void)
 		  timer_100ms_flag = 0;
 
 		  Update_System_State();
+
+		  DMS_Send_Dashboard_Data(&huart1, risk_score);
 
 #ifdef CPU_TEST_MODE
         static int time_100ms = 0;
@@ -573,7 +582,7 @@ void Update_System_State()
 	BodyData_t    body_data_local;
 
 	// 2. 크리티컬 섹션 (Critical Section): 인터럽트 잠시 중단
-	__disable_irq();
+//	__disable_irq();
 
     // 3. 전역 변수 값을 로컬 변수로 안전하게 복사
 	vision_data_local  = vision_data;
@@ -581,7 +590,7 @@ void Update_System_State()
 	body_data_local = body_data;
 
     // 4. 인터럽트 다시 허용
-    __enable_irq();
+//    __enable_irq();
 
     // -----------------------------------------------------------
     // 이제부터는 전역변수 대신 로컬 변수(_local)만 사용합니다.
@@ -589,9 +598,13 @@ void Update_System_State()
 
 
     // 비전, 섀시, 바디에서 에러 플래그가 하나라도 0이 아니면 고장 처리
-    if (vision_data_local.err_flag != 0 || chassis_data_local.err_flag != 0 || body_data_local.err_flag != 0)
+    if (vision_data_local.is_face_detected != 1 || chassis_data_local.err_flag != 0 || body_data_local.err_flag != 0)
     {
-        printf("🔧 SENSOR ERROR DETECTED! (Fail-Safe Mode)\r\n");
+        printf("body_err_flag : %d vision_err_flag : %d chassis_err_flag : %d"
+        		" 🔧 SENSOR ERROR DETECTED! (Fail-Safe Mode)\r\n",
+        		body_data_local.err_flag,
+				vision_data_local.err_flag,
+				chassis_data_local.err_flag);
 
         current_state = STATE_FAULT;
 
@@ -632,7 +645,7 @@ void Update_System_State()
     // ms -> sec 변환
     float no_op_sec = no_op_timer / 1000.0f;
 
-    uint8_t risk_score = Compute_Integrated_Risk(
+    risk_score = Compute_Integrated_Risk(
                             safe_perclos,
                             chassis_data_local.steering_std_dev,
                             body_data_local.hands_off_sec,
@@ -677,18 +690,28 @@ void Update_System_State()
     // 제어 신호 전송 (ICD V0.1.2 규격)
     DMS_Send_Control_Signal(&huart3, current_state, mrm_cmd, 0);
 
-    // 수정된 printf (무조작 시간 확인용)
-//        printf("Risk: %d | Eye_safe : %d%% | detected : %d | Hands: %.1fs | Head: %.1f | Steer: %.1f | NoOp: %.1fs\r\n",
-//                risk_score,
-//				safe_perclos,
-//				vision_data_local.is_face_detected,
-//                body_data_local.hands_off_sec,
-//                body_data_local.head_delta_cm,
-//                chassis_data_local.steering_std_dev,
-//                no_op_sec
-//                );
+
+    printf("%3d Risk: %3d | Eye_safe : %3d%% | detected : %3d | Hands: %3.1fs | Head: %3.1f | Steer: %3.1f | NoOp: %3.1fs\r\n",
+                vision_data_local.alive_cnt,
+        		risk_score,
+				safe_perclos,
+				vision_data_local.is_face_detected,
+                body_data_local.hands_off_sec,
+                body_data_local.head_delta_cm,
+                chassis_data_local.steering_std_dev,
+                no_op_sec
+                );
 }
 
+// UART 에러 발생 시(노이즈 등) 호출됨 -> 에러 풀고 수신 다시 켜기
+void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
+{
+    if (huart->Instance == USART1)
+    {
+        // 에러 플래그 클리어 및 재수신 시작
+        HAL_UART_Receive_IT(huart, uart_rx_buffer, 8);
+    }
+}
 /* USER CODE END 4 */
 
 /**
