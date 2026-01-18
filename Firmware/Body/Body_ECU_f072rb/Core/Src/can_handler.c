@@ -59,15 +59,12 @@ void CAN_Tx_SensorData(int8_t head_delta, uint8_t hands_off_val, uint8_t raw_dis
     pMsg->reserved[0] = hands_off_val;              // Byte 2
     pMsg->reserved[1] = raw_dist;                   // Byte 3
 
-    // 2. 에러 플래그 로직 (SonarFail)
-    uint8_t current_err = 0;
-    if (raw_dist == 0 || raw_dist > 400) {
-        current_err = 1;
-    }
+    // 2. 에러 플래그 (SonarFail 판단)
+//	uint8_t sonar_fail = (raw_dist == 0 || raw_dist > 400) ? 1 : 0;
 
     // 3. Safety Fields (Byte 7) 업데이트
     pMsg->alive_cnt = (body_alive_counter & 0x0F);
-    pMsg->err_flag = (current_err & 0x0F);
+//    pMsg->err_flag = (current_err & 0x0F);
 
     // 4. Alive Counter 업데이트 (0~15 순환)
     body_alive_counter = (body_alive_counter + 1) % 16;
