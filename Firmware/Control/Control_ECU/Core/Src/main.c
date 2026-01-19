@@ -133,6 +133,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 
 			// 총 10바이트가 완성되었는가?
 			if(rxIndex >= 10) {
+				printf("%d%d%d%d%d%d%d%d%d%d\r\n",rxPacket[0],rxPacket[1],rxPacket[2],rxPacket[3],rxPacket[3],rxPacket[4],rxPacket[5],rxPacket[6],rxPacket[7],rxPacket[8]);
 				bPacketReady = 1;
 				rxIndex = 0;
 			}
@@ -217,12 +218,13 @@ int main(void)
 	  // [2] 시스템 상태 패킷 해석 (UART3)
 	  if(bPacketReady)
 	  {
+//		  printf("packet Ready = %d\r\n", bPacketReady);
 		  bPacketReady = 0;
 
 		  // ID(2바이트) 이후의 데이터 위치에서 값 추출
 		  uint8_t alertLevel = rxPacket[2]; // Index 0 -> 2
 		  uint8_t mrmTrigger = rxPacket[3];	// Index 1 -> 3
-
+//		  printf("alert level = %d\r\n", alertLevel);
 		  // 위험 상태 판단 로직
 		  if(alertLevel == 2 || mrmTrigger == 1)
 		  {
@@ -597,7 +599,14 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-
+#ifdef __GNUC__
+int _write(int file, char *ptr, int len)
+{
+    // 디버깅용 UART 채널.
+    HAL_UART_Transmit(&huart2, (uint8_t *)ptr, len, 30);
+    return len;
+}
+#endif
 /* USER CODE END 4 */
 
 /**
