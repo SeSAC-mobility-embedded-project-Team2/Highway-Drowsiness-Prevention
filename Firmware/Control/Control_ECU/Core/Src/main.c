@@ -133,7 +133,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 
 			// 총 10바이트가 완성되었는가?
 			if(rxIndex >= 10) {
-				printf("%d%d%d%d%d%d%d%d%d%d\r\n",rxPacket[0],rxPacket[1],rxPacket[2],rxPacket[3],rxPacket[3],rxPacket[4],rxPacket[5],rxPacket[6],rxPacket[7],rxPacket[8]);
+				printf("%d%d%d%d%d%d%d%d%d%d\r\n",rxPacket[0],rxPacket[1],rxPacket[2],rxPacket[3],rxPacket[4],rxPacket[5],rxPacket[6],rxPacket[7],rxPacket[8],rxPacket[9]);
 				bPacketReady = 1;
 				rxIndex = 0;
 			}
