@@ -1,0 +1,92 @@
+/*
+ * sensor_ultrasonic.c
+ *
+ *  Created on: 2026. 1. 14.
+ *      Author: DDU
+ */
+
+#include "sensor_ultrasonic.h"
+
+extern TIM_HandleTypeDef htim3; // CubeMX에서 설정한 TIM3
+Ultrasonic_t hultrasonic = {0};
+
+static uint16_t dynamic_baseline = 10;
+
+// 기준 거리를 설정하는 함수
+void Ultrasonic_Set_Baseline(uint16_t dist) {
+    if (dist > 0 && dist < 400) {
+        dynamic_baseline = dist;
+    }
+}
+
+// 1. 트리거 신호 발생 (10us High)
+void Ultrasonic_Trigger(void) {
+    HAL_GPIO_WritePin(Supersonic_trig_GPIO_Port, Supersonic_trig_Pin, GPIO_PIN_SET); // Trig PB6 High
+    delay_us(10);
+    HAL_GPIO_WritePin(Supersonic_trig_GPIO_Port, Supersonic_trig_Pin, GPIO_PIN_RESET); // Trig PB6 Low
+}
+
+uint16_t distance = 0;
+
+// 2. 입력 캡처 인터럽트 처리 (PA6 - TIM3 CH1)
+void Ultrasonic_Capture_Callback(TIM_HandleTypeDef *htim) {
+    if (htim->Instance == TIM3) {
+        if (hultrasonic.is_first_captured == 0) {
+            hultrasonic.capture_start = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_1);
+            hultrasonic.is_first_captured = 1;
+            __HAL_TIM_SET_CAPTUREPOLARITY(htim, TIM_CHANNEL_1, TIM_INPUTCHANNELPOLARITY_FALLING);
+        }
+        else {
+            hultrasonic.capture_end = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_1);
+
+            if (hultrasonic.capture_end >= hultrasonic.capture_start) {
+                hultrasonic.diff_time = hultrasonic.capture_end - hultrasonic.capture_start;
+            } else {
+                hultrasonic.diff_time = (65535 - hultrasonic.capture_start) + hultrasonic.capture_end;
+            }
+
+            uint16_t current_dist = hultrasonic.diff_time / 58;
+
+            // --- 방법 B: EMA 필터 적용 ---
+            if (current_dist < 400) {
+                // 초기값이 0일 경우, 0에서부터 시작하면 너무 느리므로 첫 데이터는 바로 대입
+                if (hultrasonic.avg_distance == 0) {
+                    hultrasonic.avg_distance = (float)current_dist;
+                } else {
+                    // 수식: New_Avg = (Alpha * Current) + ((1 - Alpha) * Old_Avg)
+                    hultrasonic.avg_distance = (EMA_ALPHA * (float)current_dist) +
+                                               ((1.0f - EMA_ALPHA) * hultrasonic.avg_distance);
+                }
+            }
+
+            hultrasonic.is_first_captured = 0;
+            __HAL_TIM_SET_CAPTUREPOLARITY(htim, TIM_CHANNEL_1, TIM_INPUTCHANNELPOLARITY_RISING);
+        }
+    }
+}
+
+// 결과값 반환 시 반올림 처리
+uint16_t Ultrasonic_Get_Avg_Distance(void) {
+    return (uint16_t)(hultrasonic.avg_distance + 0.5f);
+}
+
+/**
+ * @brief 머리 위치 변화량 계산 (범위 확장: -60 ~ +60 cm)
+ */
+int8_t Ultrasonic_Get_Head_Delta(void) {
+    // Delta = 현재 평균 거리 - 동적 기준 거리
+    int16_t delta = (int16_t)hultrasonic.avg_distance - (int16_t)dynamic_baseline;
+
+    // 범위 제한 수정 (-60 ~ +60 cm)
+    if (delta > 60) return 60;
+    else if (delta < -60) return -60;
+    else return (int8_t)delta;
+}
+
+uint16_t Ultrasonic_Get_Distance(void) {
+    return distance;
+}
+
+uint16_t Ultrasonic_Get_Baseline(void) {
+    return dynamic_baseline;
+}
