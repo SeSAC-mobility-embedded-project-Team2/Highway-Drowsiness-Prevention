@@ -85,6 +85,9 @@ void DMS_Send_Control_Signal(UART_HandleTypeDef *huart, SystemState_t state, uin
     // 0:Normal, 1:Warning, 2:Danger, 3:Fault
     tx_packet[2] = (uint8_t)state;
 
+    // 테스트코드
+    tx_packet[2] = 1;
+
     // --------------------------------------------------------
     // [Payload Byte 1] MRM_Trigger (Bit 0) -> tx_packet[3]
     // --------------------------------------------------------
