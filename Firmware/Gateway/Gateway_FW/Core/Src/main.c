@@ -582,7 +582,7 @@ void Update_System_State()
 	BodyData_t    body_data_local;
 
 	// 2. 크리티컬 섹션 (Critical Section): 인터럽트 잠시 중단
-//	__disable_irq();
+	__disable_irq();
 
     // 3. 전역 변수 값을 로컬 변수로 안전하게 복사
 	vision_data_local  = vision_data;
@@ -590,7 +590,7 @@ void Update_System_State()
 	body_data_local = body_data;
 
     // 4. 인터럽트 다시 허용
-//    __enable_irq();
+    __enable_irq();
 
     // -----------------------------------------------------------
     // 이제부터는 전역변수 대신 로컬 변수(_local)만 사용합니다.
@@ -598,13 +598,13 @@ void Update_System_State()
 
 
     // 비전, 섀시, 바디에서 에러 플래그가 하나라도 0이 아니면 고장 처리
-    if (vision_data_local.is_face_detected != 1 || chassis_data_local.err_flag != 0 || body_data_local.err_flag != 0)
+    if (vision_data_local.err_flag != 0 || chassis_data_local.err_flag != 0 || body_data_local.err_flag != 0)
     {
-//        printf("body_err_flag : %d vision_err_flag : %d chassis_err_flag : %d"
-//        		" 🔧 SENSOR ERROR DETECTED! (Fail-Safe Mode)\r\n",
-//        		body_data_local.err_flag,
-//				vision_data_local.err_flag,
-//				chassis_data_local.err_flag);
+        printf("body_err_flag : %d vision_err_flag : %d chassis_err_flag : %d"
+        		" 🔧 SENSOR ERROR DETECTED! (Fail-Safe Mode)\r\n",
+        		body_data_local.err_flag,
+				vision_data_local.err_flag,
+				chassis_data_local.err_flag);
 
         current_state = STATE_FAULT;
 
