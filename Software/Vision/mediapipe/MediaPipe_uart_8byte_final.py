@@ -6,7 +6,11 @@ import time
 import serial
 import struct
 from collections import deque
+import socket
 
+sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+UDP_IP = "127.0.0.1"
+UDP_PORT = 5005
 # ... (프로세스 정리 코드 생략) ...
 
 # ==========================================
@@ -19,8 +23,8 @@ TX_CYCLE = 0.1  # 100ms (0.1초) 마다 데이터 전송
 EAR_THRESHOLD = 0.20 
 
 # >> PERCLOS 계산을 위한 히스토리 버퍼 설정
-FPS_ESTIMATE = 30             
-WINDOW_SECONDS = 3        
+FPS_ESTIMATE = 35             
+WINDOW_SECONDS = 3       
 MAX_HISTORY = FPS_ESTIMATE * WINDOW_SECONDS 
 
 # >> UART 시리얼 통신 설정
@@ -195,6 +199,32 @@ def main():
                 
                 # 타이머 갱신
                 last_tx_time = curr_time
+
+            #  =========================================================
+            # [추가 3] UART 수신 및 UDP 중계 (여기에 붙여넣으세요!)
+            # =========================================================
+            try:
+                # 버퍼에 32바이트(헤더포함) 이상 쌓였는지 확인
+                if ser.in_waiting >= 32:
+                    # 1. 헤더(0xFCFD) 찾기 (Little Endian: FD, FC 순서)
+                    # read(1)로 한 바이트씩 읽어서 위치를 맞춥니다.
+                    
+                    # 첫 바이트가 0xFD인지 확인
+                    if ser.read(1) == b'\xfd':
+                        # 맞다면, 두 번째 바이트가 0xFC인지 확인
+                        if ser.read(1) == b'\xfc':
+                            # 헤더를 찾았음! 나머지 30바이트(Payload) 읽기
+                            payload = ser.read(30)
+                            
+                            if len(payload) == 30:
+                                # 헤더(FD FC)를 다시 붙여서 완성된 32바이트를 만듦
+                                full_packet = b'\xfd\xfc' + payload
+                                
+                                # 로컬호스트(대시보드 프로그램)로 던짐
+                                sock.sendto(full_packet, (UDP_IP, UDP_PORT))
+            except Exception as e:
+                pass # 통신 에러가 나도 카메라는 멈추면 안 됨!
+            # =========================================================
 
             # --- [화면 시각화] ---
             # 화면은 통신과 무관하게 카메라 속도(30FPS)대로 계속 갱신
